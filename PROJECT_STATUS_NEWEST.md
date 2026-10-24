@@ -16,7 +16,10 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
   - Added `POST /dev/reset`.
   - Added spoken names for SEE, SDM and RNM.
   - 156 tests pass.
-- [ ] 4.3 Live call
+- [x] 4.3 prep done.
+  - Local `env` is set to "Live demo (sim units)", and `setup_vapi.py` was re-run.
+  - **Fixed adsb.lol 403:** it rejects httpx's default User-Agent, so every "live" lookup had been silently falling back to a sample. `main.py` now sends a SkyWatch User-Agent.
+- [ ] 4.3 Live call (Voice owner places it)
 - [ ] 4.4 Demo-value items
 
 **Time plan:**

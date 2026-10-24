@@ -29,6 +29,8 @@ from voice.vapi_client import VapiClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("skywatch")
+# adsb.lol answers 403 to httpx's default "python-httpx/x" User-Agent; any descriptive UA works.
+HTTP_HEADERS = {"User-Agent": "SkyWatch/0.2 (c0mpiled-16 hackathon; github.com/sksanders27/c0mpiled)"}
 
 
 def mask_phone(phone: str) -> str:
@@ -69,7 +71,8 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
 
     @asynccontextmanager
     async def lifespan(application):
-        async with httpx.AsyncClient(timeout=5, transport=aircraft_transport, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=5, transport=aircraft_transport, follow_redirects=False,
+                                     headers=HTTP_HEADERS) as client:
             vapi = vapi_client or (OfflineVapiClient() if config.offline_voice else VapiClient(settings.vapi_api_key))
             voice = VoiceService(settings, vapi)
             aircraft = AircraftService(client, mode=config.aircraft_mode,

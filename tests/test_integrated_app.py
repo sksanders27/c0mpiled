@@ -245,3 +245,22 @@ def test_startup_banner_masks_phones_and_warns_on_offline_with_key(tmp_path, cap
     assert "ambulance-1=***4321" in text and "fire-1=***4567" in text
     assert "+15551234567" not in text
     assert "a REAL pilot call will hear NO dispatch updates" in text
+
+
+def test_aircraft_requests_send_a_non_default_user_agent(tmp_path):
+    """adsb.lol rejects httpx's default User-Agent with 403."""
+    import httpx
+
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("user-agent", ""))
+        return httpx.Response(200, json={"ac": []})
+
+    settings = Settings(log_dir=tmp_path, sim_units=True, unit_phones=["+15551234567"])
+    app = create_app(settings=settings,
+                     backend_settings=BackendSettings(aircraft_mode="live", offline_voice=True),
+                     vapi_client=FakeVapi(), aircraft_transport=httpx.MockTransport(handler))
+    with TestClient(app) as client:
+        client.get("/api/aircraft/UAL1234")
+    assert seen and all(ua.startswith("SkyWatch/") for ua in seen)
