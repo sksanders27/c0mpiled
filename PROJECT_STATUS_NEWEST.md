@@ -19,7 +19,11 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
 - [x] 4.3 prep done.
   - Local `env` is set to "Live demo (sim units)", and `setup_vapi.py` was re-run.
   - **Fixed adsb.lol 403:** it rejects httpx's default User-Agent, so every "live" lookup had been silently falling back to a sample. `main.py` now sends a SkyWatch User-Agent.
-- [ ] 4.3 Live call (Voice owner places it)
+- [~] 4.3 Live call #1 (4:40 PM).
+  - Worked: callsign, souls=140, MEDICAL, live aircraft, pilot transcripts, filler.
+  - **Escalated after one decline**, because DAL1876 had flown up to LAX by call time and only one ambulance was within 150 km. The backend behaved correctly for that position.
+  - Fixed a bug: the pilot heard "escalating" and then "assigning another unit". Reassignment is now announced only when another unit is really called.
+  - Added `scripts/pick_flight.py --check`, which picks a low, descending San Diego arrival right before the call.
 - [ ] 4.4 Demo-value items
   - [x] #1 Observer upgrade:
     - dispatcher marker,

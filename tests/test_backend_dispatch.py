@@ -249,3 +249,24 @@ def test_cancellation_before_lookup_task_starts_cannot_resurrect_incident(tmp_pa
         cancelled = client.portal.call(create_and_cancel_before_yielding)
         assert cancelled["status"] == "CANCELLED"
         assert cancelled["assignments"] == []
+
+
+def test_decline_with_no_replacement_escalates_without_promising_another_unit(tmp_path):
+    """Live-call regression: pilot heard 'escalating' and then 'assigning another unit'."""
+    with TestClient(make_app(tmp_path, max_attempts_per_type=1)) as client:
+        incident = report(client, emergency_type="MEDICAL", call_id="rest-pilot-medical")
+        escalated = wait_incident(client, incident["id"], lambda item: item["status"] == "ESCALATED")
+        assert [a["status"] for a in escalated["assignments"]] == ["DECLINED"]
+        time.sleep(0.1)
+        said = [text for _, text in client.app.state.vapi.said]
+        assert not any("assigning another unit" in text for text in said), said
+        assert any("escalating to a human coordinator" in text for text in said), said
+
+
+def test_decline_with_replacement_announces_reassignment_before_plan(tmp_path):
+    with TestClient(make_app(tmp_path)) as client:
+        incident = report(client, emergency_type="MEDICAL", call_id="rest-pilot-medical-2")
+        wait_incident(client, incident["id"], lambda item: item["status"] == "PILOT_BRIEFED")
+        said = [text for _, text in client.app.state.vapi.said]
+        assert said[0] == "Stand by, assigning another unit."
+        assert "have accepted" in said[1]

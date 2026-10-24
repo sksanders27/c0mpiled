@@ -100,6 +100,12 @@ The `voice/` package and the shared `voice.models` contracts remain the integrat
 
 No HTTP adapter between Voice and Backend is required.
 
+Before a live call, pick a flight that will stay in range. It prefers low, descending San Diego arrivals, and prints the line to say:
+
+```bash
+.venv/bin/python scripts/pick_flight.py --check
+```
+
 For a real pilot call:
 1. Configure the Vapi credentials and public webhook URL in `.env`, using the "Live demo (sim units)" column above.
 2. Run `.venv/bin/python scripts/setup_vapi.py`.

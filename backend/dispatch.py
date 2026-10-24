@@ -217,7 +217,7 @@ class DispatchEngine:
                 self._emit(incident, "incident.failed", "Automatic dispatch failed; human coordination required.")
             await self.voice.update_pilot(incident_id, "Automatic dispatch could not complete. Human coordination is required.")
 
-    async def _advance(self, incident_id):
+    async def _advance(self, incident_id, reassigning=False):
         brief = plan = escalation = None
         async with self.lock:
             incident = self._get(incident_id)
@@ -266,6 +266,9 @@ class DispatchEngine:
         if escalation:
             await self.voice.update_pilot(incident_id, "Dispatch is escalating to a human coordinator. The complete response is not yet confirmed.")
         elif brief:
+            if reassigning:
+                # Keep slow speech outside both the state lock and the reassignment path.
+                self._spawn(self.voice.update_pilot(incident_id, "Stand by, assigning another unit."))
             try:
                 await self.voice.call_unit(brief)
             except Exception:
@@ -315,10 +318,9 @@ class DispatchEngine:
                        f"{unit.name}: {assignment.status.lower().replace('_', ' ')}.",
                        assignment_id=assignment.id, reason=reason)
             reassigning = assignment.status != "ACCEPTED"
-        if reassigning:
-            # Keep slow speech outside both the state lock and the reassignment path.
-            self._spawn(self.voice.update_pilot(incident_id, "Stand by, assigning another unit."))
-        await self._advance(incident_id)
+        # _advance tells the pilot "assigning another unit" only if it really calls another unit;
+        # announcing it here raced the escalation message and could promise a unit that never comes.
+        await self._advance(incident_id, reassigning=reassigning)
 
     def _release(self, incident, pending_only=False):
         for assignment in incident.assignments:
