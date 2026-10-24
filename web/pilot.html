@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyWatch Pilot Line</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.45 system-ui, sans-serif; background: #0b1220; color: #e8eef8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: #0b1220; }
+    main { width: 100%; max-width: 520px; text-align: center; }
+    h1 { font-size: 20px; letter-spacing: .04em; margin: 0 0 6px; }
+    .subtle { color: #9cacc3; font-size: 14px; }
+    button { margin: 28px auto 18px; display: block; width: 220px; height: 220px; border-radius: 50%; border: 0; cursor: pointer;
+             font: 700 22px/1.2 system-ui, sans-serif; letter-spacing: .04em; color: #fff; background: #c4303f;
+             box-shadow: 0 0 0 10px rgba(196,48,63,.18); transition: transform .1s; }
+    button:active { transform: scale(.97); }
+    button.live { background: #2f7d55; box-shadow: 0 0 0 10px rgba(76,211,138,.18); animation: pulse 1.6s infinite; }
+    button:disabled { background: #3a465c; box-shadow: none; cursor: wait; animation: none; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 18px rgba(76,211,138,.08); } }
+    #status { font-weight: 600; min-height: 1.5em; }
+    #log { margin-top: 18px; text-align: left; max-height: 40vh; overflow: auto; font-size: 14px; }
+    #log p { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #111b2c; border: 1px solid #26334b; }
+    #log p.assistant { border-color: #2c4a74; }
+    #log b { color: #9cacc3; font-weight: 600; margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>SkyWatch Emergency Line</h1>
+    <div class="subtle">Browser fallback for the pilot phone line. Press, allow the microphone, and declare the emergency.</div>
+    <button id="talk" disabled>Loading…</button>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="log" aria-label="Call transcript"></div>
+  </main>
+  <script type="module">
+    import Vapi from 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm';
+
+    const btn = document.getElementById('talk');
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const setStatus = t => { statusEl.textContent = t; };
+    const line = (role, text) => {
+      const p = document.createElement('p'); p.className = role;
+      const b = document.createElement('b'); b.textContent = role === 'assistant' ? 'SkyWatch' : 'Pilot';
+      p.append(b, document.createTextNode(text)); logEl.append(p); logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    let vapi = null, assistantId = null, live = false;
+    try {
+      const r = await fetch('/pilot/config', { cache: 'no-store' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+      const cfg = await r.json();
+      assistantId = cfg.assistantId;
+      vapi = new Vapi(cfg.publicKey);
+      btn.disabled = false; btn.textContent = 'MAYDAY'; setStatus('Ready');
+    } catch (e) {
+      btn.textContent = 'Unavailable'; setStatus(`Pilot line not configured: ${e.message}`);
+    }
+
+    if (vapi) {
+      vapi.on('call-start', () => { live = true; btn.disabled = false; btn.classList.add('live'); btn.textContent = 'END CALL'; setStatus('Connected. Speak now.'); });
+      vapi.on('call-end', () => { live = false; btn.disabled = false; btn.classList.remove('live'); btn.textContent = 'MAYDAY'; setStatus('Call ended'); });
+      vapi.on('error', e => { setStatus(`Call error: ${e?.error?.message || e?.message || 'see console'}`); console.error(e); });
+      vapi.on('message', m => {
+        if (m.type === 'transcript' && m.transcriptType === 'final') line(m.role, m.transcript);
+      });
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        if (live) { setStatus('Ending…'); vapi.stop(); return; }
+        setStatus('Connecting…'); logEl.replaceChildren();
+        try { await vapi.start(assistantId); }
+        catch (e) { btn.disabled = false; setStatus(`Could not start: ${e?.message || e}`); }
+      });
+    }
+  </script>
+</body>
+</html>

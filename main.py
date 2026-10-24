@@ -20,7 +20,7 @@ from backend.config import BackendSettings
 from backend.dispatch import DispatchEngine, DispatchError
 from backend.models import AircraftContext, Incident
 from backend.offline import OfflineVapiClient
-from voice.config import Settings
+from voice.config import Settings, load_vapi_ids
 from voice.models import EmergencyReport
 from voice.ports import VoiceService
 from voice.router import build_router
@@ -134,6 +134,19 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
     @app.get("/observer", include_in_schema=False)
     async def observer():
         return FileResponse(Path(__file__).parent / "web" / "observer.html")
+
+    @app.get("/pilot", include_in_schema=False)
+    async def pilot_page():
+        """Browser fallback for the pilot phone line (web call to the same pilot assistant)."""
+        return FileResponse(Path(__file__).parent / "web" / "pilot.html")
+
+    @app.get("/pilot/config", include_in_schema=False)
+    async def pilot_config():
+        # Only the PUBLIC key (designed for browsers) and the assistant id. Never the private key.
+        assistant_id = load_vapi_ids().get("pilot_assistant_id")
+        if not settings.vapi_public_key or not assistant_id:
+            raise HTTPException(503, "Set VAPI_PUBLIC_KEY and run scripts/setup_vapi.py")
+        return {"publicKey": settings.vapi_public_key, "assistantId": assistant_id}
 
     @app.get("/api/incidents", response_model=list[Incident], dependencies=protected, tags=["incidents"])
     async def incidents(request: Request):

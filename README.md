@@ -49,6 +49,7 @@ Confirmation closes the incident and releases its simulated responders. No real 
 
 Useful URLs:
 - [observer](http://127.0.0.1:8000/observer)
+- [pilot browser fallback](http://127.0.0.1:8000/pilot): a web call to the same pilot assistant, if the phone line fails
 - [API documentation](http://127.0.0.1:8000/docs)
 - [health](http://127.0.0.1:8000/health)
 

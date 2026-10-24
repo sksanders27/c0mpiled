@@ -264,3 +264,18 @@ def test_aircraft_requests_send_a_non_default_user_agent(tmp_path):
     with TestClient(app) as client:
         client.get("/api/aircraft/UAL1234")
     assert seen and all(ua.startswith("SkyWatch/") for ua in seen)
+
+
+def test_pilot_page_and_config_expose_only_public_key(tmp_path, monkeypatch):
+    import main as main_module
+
+    monkeypatch.setattr(main_module, "load_vapi_ids", lambda: {"pilot_assistant_id": "pilot-asst-1"})
+    app = make_app(tmp_path)
+    with TestClient(app) as client:
+        assert client.get("/pilot").status_code == 200
+        assert "@vapi-ai/web@2.7.1" in client.get("/pilot").text
+        assert client.get("/pilot/config").status_code == 503  # no public key configured
+        client.app.state.voice.settings.vapi_public_key = "PUBLIC_KEY_TEST"
+        cfg = client.get("/pilot/config").json()
+        assert cfg == {"publicKey": "PUBLIC_KEY_TEST", "assistantId": "pilot-asst-1"}
+        assert "PRIVATE_VAPI_KEY_TEST_SENTINEL" not in json.dumps(cfg)

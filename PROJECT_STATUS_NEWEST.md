@@ -27,6 +27,10 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
     - dashed unit→airport lines,
     - assignments list (unit, status, reason) and dispatcher/airport on each incident card.
     - The map only re-fits when the story changes.
+  - [x] #2 Browser fallback:
+    - `/pilot` is one MAYDAY button using `@vapi-ai/web@2.7.1` from jsdelivr, with a live transcript.
+    - `/pilot/config` returns only the public key and the pilot assistant ID.
+    - Not yet tested with a real browser call.
 
 **Time plan:**
 - Integration merged and green by **4:45 PM**
