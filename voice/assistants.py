@@ -12,18 +12,22 @@ PILOT_NAME = "skywatch-pilot"
 UNIT_NAME = "skywatch-unit"
 
 PILOT_KEYTERMS = [
-    "Mayday", "Pan-pan", "squawk", "seven seven hundred", "souls on board", "fuel remaining",
+    "SkyWatch", "Mayday", "Pan-pan", "squawk", "seven seven hundred", "souls on board", "fuel remaining",
     "wilco", "roger", "affirm", "divert", "ARFF", "depressurization", "smoke",
     "United", "American", "Delta", "Southwest", "Alaska", "JetBlue", "Spirit", "Frontier",
     "SkyWest", "Hawaiian", "FedEx", "Speedbird", "November",
 ]
-UNIT_KEYTERMS = ["accept", "unable", "responding", "en route", "committed", "affirm", "negative", "ARFF"]
+UNIT_KEYTERMS = ["SkyWatch", "accept", "unable", "responding", "en route", "committed", "affirm", "negative", "ARFF"]
 
 UNIT_FIRST_MESSAGE = (
     "Dispatch to {{unit_name}}. {{severity}} priority: {{emergency_type}} aboard {{callsign}}, "
     "arriving {{airport}} in about {{eta_min}} minutes, {{souls}} souls on board. "
     "Can you respond? Say accept, or unable."
 )
+
+# Plain "transcript" (not 'transcript[transcriptType="final"]', which never arrived on a live call);
+# the router drops partials.
+SERVER_MESSAGES = ["tool-calls", "status-update", "transcript", "end-of-call-report"]
 
 VOICE = {"provider": "vapi", "version": "2", "voiceId": "Elliot"}
 
@@ -121,7 +125,7 @@ def pilot_assistant(s: Settings) -> dict:
         "voice": VOICE,
         "transcriber": _transcriber(PILOT_KEYTERMS),
         "server": _server(s),
-        "serverMessages": ["tool-calls", "status-update", 'transcript[transcriptType="final"]', "end-of-call-report"],
+        "serverMessages": SERVER_MESSAGES,
         "monitorPlan": {"controlEnabled": True},
         "silenceTimeoutSeconds": 90,
         "maxDurationSeconds": 600,
@@ -137,7 +141,7 @@ def unit_assistant(s: Settings) -> dict:
         "voice": VOICE,
         "transcriber": _transcriber(UNIT_KEYTERMS),
         "server": _server(s),
-        "serverMessages": ["tool-calls", "status-update", 'transcript[transcriptType="final"]', "end-of-call-report"],
+        "serverMessages": SERVER_MESSAGES,
         "monitorPlan": {"controlEnabled": True},
         "endCallPhrases": ["dispatch out"],
         "silenceTimeoutSeconds": 30,
