@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyWatch Observer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <style>
+    :root { color-scheme: dark; font: 15px/1.45 system-ui, sans-serif; background: #0b1220; color: #e8eef8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { padding: 16px 22px; border-bottom: 1px solid #26334b; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    h1 { font-size: 18px; margin: 0; letter-spacing: .03em; }
+    .subtle { color: #9cacc3; font-size: 13px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: calc(100vh - 61px); }
+    #map { min-height: 360px; background: #172236; }
+    aside { overflow: auto; border-left: 1px solid #26334b; padding: 18px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #9cacc3; margin: 0 0 12px; }
+    .card { padding: 13px; margin: 0 0 10px; border: 1px solid #26334b; background: #111b2c; border-radius: 10px; }
+    .title { font-weight: 650; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; text-transform: uppercase; background: #244b3c; color: #a8f0c9; }
+    .status.sample { background: #654719; color: #ffe0a0; }
+    .status.unavailable, .status.not_found, .status.position_unavailable { background: #4b3034; color: #ffc0c5; }
+    .row { margin-top: 6px; color: #b6c3d5; font-size: 13px; }
+    .warning { color: #ffd38a; }
+    .empty { color: #9cacc3; padding: 12px 0; }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #111b2c; color: #e8eef8; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; height: auto; min-height: calc(100vh - 61px); } aside { border-left: 0; border-top: 1px solid #26334b; } }
+  </style>
+</head>
+<body>
+  <header><h1>SkyWatch <span class="subtle">/ Observer</span></h1><span class="subtle" id="connection">Connecting…</span></header>
+  <main>
+    <div id="map" aria-label="Aircraft and nearby airports map"></div>
+    <aside>
+      <section><h2>Aircraft</h2><div id="aircraft-list" class="empty">Waiting for lookup results…</div></section>
+      <section style="margin-top:22px"><h2>Incident timeline</h2><div id="timeline" class="empty">Waiting for events…</div></section>
+    </aside>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const map = window.L ? L.map('map').setView([32.8, -117.15], 8) : null;
+    if (map) L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    const markers = window.L ? L.layerGroup() : null;
+    if (map) markers.addTo(map);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmt = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, {maximumFractionDigits: 1}) : '—';
+    function render(data) {
+      document.getElementById('connection').textContent = 'Live observer feed';
+      const incidents = Array.isArray(data.incidents) ? data.incidents : [];
+      document.getElementById('aircraft-list').innerHTML = incidents.length ? incidents.map(item => {
+        const a = item.aircraft || {}, simulated = Boolean(a.is_mock);
+        const nearby = item.nearby_airports || [];
+        return `<article class="card"><div class="title">${esc(item.callsign || 'Unknown callsign')} <span class="status ${simulated ? 'sample' : a.latitude == null ? 'unavailable' : ''}">${simulated ? 'SIMULATED' : a.latitude == null ? 'POSITION UNAVAILABLE' : 'LIVE FEED'}</span></div>
+          <div class="row">Incident ${esc(item.id)} · ${esc(item.status || '')}</div>
+          ${a.latitude != null ? `<div class="row">Altitude ${fmt(a.altitude_ft)} ft · Ground speed ${fmt(a.ground_speed_kt)} kt · Track ${fmt(a.heading_deg)}°</div>` : '<div class="row">No usable aircraft position</div>'}
+          ${(item.warnings || []).map(w => `<div class="row warning">${esc(w)}</div>`).join('')}
+          ${nearby.map(ap => `<div class="row">${esc(ap.name)} (${esc(ap.icao)}) · ${fmt(Number(ap.distance_km) / 1.852)} NM</div>`).join('') || '<div class="row">No nearby airport data</div>'}</article>`;
+      }).join('') : '<div class="empty">No aircraft lookups yet.</div>';
+      const events = (data.events || []).slice(-35).reverse();
+      document.getElementById('timeline').innerHTML = events.length ? events.map(e => {
+        const voice = (e.data || {}).voice_event || {};
+        return `<article class="card"><div class="title">${esc(String(e.kind || 'event').replaceAll('_',' '))}</div><div class="row">${esc(e.incident_id || '')}${voice.text ? ` · ${esc(voice.text)}` : ''}</div><div class="row">${esc(e.message || new Date(e.timestamp || Date.now()).toLocaleTimeString())}</div></article>`;
+      }).join('') : '<div class="empty">No events yet.</div>';
+      if (!map) return;
+      markers.clearLayers();
+      const bounds = [];
+      for (const item of incidents) {
+        const a = item.aircraft || {};
+        if (!Number.isFinite(a.latitude) || !Number.isFinite(a.longitude)) continue;
+        const pos = [a.latitude, a.longitude]; bounds.push(pos);
+        L.marker(pos).addTo(markers).bindPopup(`<b>${esc(item.callsign || 'Unknown callsign')}</b><br>${a.is_mock ? 'SIMULATED AIRCRAFT' : 'Live feed'}<br>Ground track ${fmt(a.heading_deg)}°`);
+        for (const airport of item.nearby_airports || []) {
+          if (!Number.isFinite(airport.latitude) || !Number.isFinite(airport.longitude)) continue;
+          const airportPos = [airport.latitude, airport.longitude]; bounds.push(airportPos);
+          L.circleMarker(airportPos, {radius: 5, color:'#70b7ff', fillOpacity:.85}).addTo(markers)
+            .bindPopup(`<b>${esc(airport.name)}</b><br>${esc(airport.icao)} · ${fmt(Number(airport.distance_km) / 1.852)} NM`);
+        }
+      }
+      if (bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:10});
+    }
+    const tokenKey = 'skywatch-observer-token';
+    async function refresh() {
+      try {
+        let token = sessionStorage.getItem(tokenKey) || '';
+        let response = await fetch('/observer/state', {cache:'no-store', headers: token ? {Authorization: `Bearer ${token}`} : {}});
+        if (response.status === 401) {
+          token = prompt('Enter the observer API token');
+          if (!token) throw new Error('Observer token required');
+          sessionStorage.setItem(tokenKey, token);
+          response = await fetch('/observer/state', {cache:'no-store', headers: {Authorization: `Bearer ${token}`} });
+        }
+        if (!response.ok) throw new Error(response.status);
+        render(await response.json());
+      }
+      catch (_) { document.getElementById('connection').textContent = 'Observer feed unavailable'; }
+    }
+    refresh(); setInterval(refresh, 1200);
+  </script>
+</body>
+</html>

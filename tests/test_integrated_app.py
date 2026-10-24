@@ -1,5 +1,7 @@
 """Exercise the real dispatch backend through unchanged Vapi webhook fixtures."""
 
+import concurrent.futures
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -169,16 +171,22 @@ def test_dashboard_api_auth_and_websocket_first_message(tmp_path):
         assert client.get("/api/snapshot").status_code == 401
         authorized = client.get("/api/snapshot", headers={"Authorization": "Bearer dashboard-secret"})
         assert authorized.status_code == 200
-        with client.websocket_connect("/ws/events") as websocket:
+        # Starlette>=1.x TestClient cancels the server task on exit and can surface CancelledError
+        # if the handler hasn't returned yet; the assertions below run before that point.
+        exit_race = contextlib.suppress(concurrent.futures.CancelledError)
+        with exit_race, client.websocket_connect("/ws/events") as websocket:
             websocket.send_json({"token": "dashboard-secret"})
             snapshot = websocket.receive_json()
             assert snapshot["type"] == "snapshot"
             assert snapshot["data"]["incidents"] == []
-        with pytest.raises(WebSocketDisconnect) as denied:
-            with client.websocket_connect("/ws/events") as websocket:
-                websocket.send_json({"token": "incorrect"})
+        denied = None
+        with contextlib.suppress(concurrent.futures.CancelledError), client.websocket_connect("/ws/events") as websocket:
+            websocket.send_json({"token": "incorrect"})
+            try:
                 websocket.receive_json()
-        assert denied.value.code == 1008
+            except WebSocketDisconnect as error:
+                denied = error
+        assert denied is not None and denied.code == 1008
 
 
 def test_integrated_vapi_webhook_retains_separate_secret_auth(tmp_path):

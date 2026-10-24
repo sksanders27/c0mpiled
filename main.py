@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import hmac
+from pathlib import Path
 from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from backend.aircraft import AircraftLookupError, AircraftService
@@ -64,7 +65,7 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
     app = FastAPI(title="SkyWatch — Integrated Emergency Dispatch", version="0.2.0", lifespan=lifespan,
                   description="Existing Vapi voice service connected to aircraft intelligence, dispatch, and observer APIs. Emergencies and responders are simulated. State is in-memory; use one worker.")
     app.add_middleware(CORSMiddleware, allow_origins=list(config.cors_origins), allow_credentials=False,
-                       allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
+                       allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "X-Vapi-Secret"])
 
     @app.exception_handler(DispatchError)
     async def dispatch_error(request, error):
@@ -96,8 +97,13 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
         return await dispatch.incident(iid)
 
     @app.get("/api/snapshot", dependencies=protected, tags=["dashboard"])
+    @app.get("/observer/state", dependencies=protected, include_in_schema=False)
     async def snapshot(request: Request):
         return await request.app.state.dispatch.snapshot()
+
+    @app.get("/observer", include_in_schema=False)
+    async def observer():
+        return FileResponse(Path(__file__).parent / "web" / "observer.html")
 
     @app.get("/api/incidents", response_model=list[Incident], dependencies=protected, tags=["incidents"])
     async def incidents(request: Request):

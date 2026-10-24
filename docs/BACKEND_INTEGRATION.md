@@ -236,8 +236,6 @@ Replace local state on `snapshot`. For events, deduplicate by global `sequence` 
 
 The public feed excludes raw registries, control URLs, configured unit phone numbers, credentials, and arbitrary Vapi error bodies. Keep dashboard code on these APIs rather than reading Voice internals or log files.
 
-## Offline demo and source handoff
+## Offline demo
 
 `scripts/demo_backend.py --base-url http://127.0.0.1:8000 --timeout 40` uses HTTP only. It requires `/health` to report both `offline_voice=true` and `sim_units=true`, submits a synthetic `report_emergency` tool call with unique IDs, prints events, waits for `PILOT_BRIEFED`, and sends `confirm_plan`. It checks that the incident reaches `CONFIRMED` and releases its resources. It reads `API_TOKEN` and `VAPI_WEBHOOK_SECRET` separately from environment or `.env`.
-
-The imported baseline is GitHub `main` at `3590e481101817956d1a957cb387fb8c72fe48e8`. The local destination initially was not a checkout, and the available Git lacked its HTTPS helper. `backend-integration.patch` is intended for review/application in a normal compatible checkout using `git apply --check` followed by `git apply`. No commit or push is implied by this handoff.

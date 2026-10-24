@@ -1,0 +1,13 @@
+{
+  "callsign": "DEMO42",
+  "icao24": "abc123",
+  "latitude": 32.7338,
+  "longitude": -117.1933,
+  "altitude_ft": 8500,
+  "altitude_geom_ft": 8725,
+  "speed_knots": 210,
+  "ground_track_deg": 125,
+  "squawk": "7700",
+  "position_age_seconds": 4,
+  "on_ground": false
+}
