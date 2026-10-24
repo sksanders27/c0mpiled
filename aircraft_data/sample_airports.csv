@@ -1,0 +1,6 @@
+ident,iata_code,name,type,latitude_deg,longitude_deg,closed
+KSAN,SAN,San Diego International Airport,large_airport,32.7338,-117.1933,0
+KMYF,MYF,Montgomery-Gibbs Executive Airport,medium_airport,32.8157,-117.1396,0
+KSEE,,Gillespie Field,medium_airport,32.8262,-116.9724,0
+KCRQ,CRQ,McClellan-Palomar Airport,medium_airport,33.1283,-117.2804,0
+KSDM,,Brown Field Municipal Airport,medium_airport,32.5723,-116.9802,0

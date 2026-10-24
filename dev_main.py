@@ -8,10 +8,16 @@ run the whole loop with zero Vapi credits, and /dev/state to inspect what happen
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 
+from aircraft_data import AircraftDataService, build_aircraft_router
+from aircraft_data.integration import AircraftEnrichmentDispatch
 from voice.config import settings
 from voice.ports import MockDispatch, VoiceService, now_iso
 from voice.router import build_router
@@ -26,7 +32,17 @@ if not settings.mock_dispatch:
 vapi = VapiClient(settings.vapi_api_key)
 service = VoiceService(settings, vapi)
 dispatch = MockDispatch(service, settings)
-service.bind_dispatch(dispatch)
+http_client = httpx.AsyncClient()
+aircraft_service = AircraftDataService(
+    http_client,
+    download_airports=os.getenv("WARM_AIRPORT_CACHE") == "1",
+)
+enriched_dispatch = AircraftEnrichmentDispatch(
+    dispatch,
+    aircraft_service,
+    allow_sample_fallback=os.getenv("AIRCRAFT_DEMO_FALLBACK") == "1",
+)
+service.bind_dispatch(enriched_dispatch)
 dev_control_log: list[dict] = []
 
 
@@ -35,12 +51,19 @@ async def lifespan(app: FastAPI):
     log.info("voice dev app up: SIM_UNITS=%s SCRIPTED_DECLINE_FIRST=%s webhook=%s unit_assistant=%s",
              settings.sim_units, settings.scripted_decline_first, settings.webhook_url,
              service.unit_assistant_id or "(none: run scripts/setup_vapi.py)")
-    yield
-    await vapi.aclose()
+    try:
+        if os.getenv("WARM_AIRPORT_CACHE") == "1":
+            source = await aircraft_service.warm_airports()
+            log.info("airport data warmed from %s", source)
+        yield
+    finally:
+        await http_client.aclose()
+        await vapi.aclose()
 
 
 app = FastAPI(title="SkyWatch Voice (dev)", lifespan=lifespan)
 app.include_router(build_router(service))
+app.include_router(build_aircraft_router(aircraft_service))
 
 
 @app.get("/health")
@@ -64,4 +87,15 @@ async def dev_state():
         **service.registry.snapshot(),
         "control_log": dev_control_log,
         "mock_confirmed": dispatch.confirmed,
+        "aircraft": enriched_dispatch.snapshot(),
     }
+
+
+@app.get("/observer", include_in_schema=False)
+async def observer():
+    return FileResponse(Path(__file__).parent / "web" / "observer.html")
+
+
+@app.get("/observer/state")
+async def observer_state():
+    return enriched_dispatch.snapshot()
