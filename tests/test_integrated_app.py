@@ -1,0 +1,190 @@
+"""Exercise the real dispatch backend through unchanged Vapi webhook fixtures."""
+
+import json
+import time
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+
+from backend.config import BackendSettings
+from main import create_app
+from voice.config import Settings
+from voice.ports import MockDispatch
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+if not FIXTURES.exists():
+    FIXTURES = Path.cwd() / "tests" / "fixtures"
+
+
+class FakeVapi:
+    def __init__(self, *, say_ok=True):
+        self.say_ok = say_ok
+        self.said = []
+        self.notes = []
+
+    async def say(self, url, text):
+        self.said.append((url, text))
+        return self.say_ok
+
+    async def add_message(self, url, content, **kwargs):
+        self.notes.append((url, content))
+        return True
+
+    async def get_call(self, call_id):
+        return {"id": call_id, "monitor": {"controlUrl": f"https://ctl.invalid/{call_id}"}}
+
+    async def end_call(self, url):
+        return True
+
+
+def fixture(name):
+    return json.loads((FIXTURES / name).read_text())
+
+
+def make_app(tmp_path, *, vapi=None, delay=0.01, api_token=None, webhook_secret=""):
+    settings = Settings(
+        log_dir=tmp_path,
+        sim_units=True,
+        sim_unit_delay_s=delay,
+        max_outbound_calls=4,
+        vapi_webhook_secret=webhook_secret,
+        vapi_api_key="PRIVATE_VAPI_KEY_TEST_SENTINEL",
+        unit_phones=["+15551234567", "+15557654321"],
+    )
+    return create_app(
+        settings=settings,
+        backend_settings=BackendSettings(aircraft_mode="mock", offline_voice=True, api_token=api_token),
+        vapi_client=vapi or FakeVapi(),
+    )
+
+
+def wait_for(predicate, timeout=3):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.01)
+    pytest.fail("Integrated voice/dispatch condition did not complete")
+
+
+def get_only_incident(client):
+    response = client.get("/api/incidents")
+    assert response.status_code == 200
+    incidents = response.json()
+    return incidents[0] if incidents else None
+
+
+def test_vapi_fixture_runs_real_dispatch_decline_reassign_brief_confirm(tmp_path):
+    vapi = FakeVapi()
+    with TestClient(make_app(tmp_path, vapi=vapi)) as client:
+        assert not isinstance(client.app.state.dispatch, MockDispatch)
+        body = fixture("pilot_report_emergency.json")
+        result = client.post("/vapi/webhook", json=body)
+        assert result.status_code == 200
+        assert result.json() == {
+            "results": [{"toolCallId": "call_report_001", "result": "Copy, coordinating now."}]
+        }
+
+        def ready():
+            incident = get_only_incident(client)
+            return incident if incident and incident["status"] == "PILOT_BRIEFED" else None
+
+        incident = wait_for(ready)
+        attempts = incident["assignments"]
+        assert any(item["status"] == "DECLINED" for item in attempts)
+        assert {item["unit_type"] for item in attempts if item["status"] == "ACCEPTED"} == {"FIRE", "AMBULANCE"}
+        assert any("wilco" in text.lower() for _, text in vapi.said)
+
+        duplicate = client.post("/vapi/webhook", json=body)
+        assert duplicate.json() == result.json()
+        assert len(client.get("/api/incidents").json()) == 1
+        confirm = client.post("/vapi/webhook", json=fixture("pilot_confirm_plan.json"))
+        assert confirm.status_code == 200
+        assert confirm.json()["results"][0]["toolCallId"] == "call_confirm_001"
+        assert confirm.json()["results"][0]["result"].startswith("Plan confirmed")
+        confirmed = wait_for(
+            lambda: (item if (item := get_only_incident(client))["status"] == "CONFIRMED" else None)
+        )
+        assert confirmed["id"] == incident["id"]
+        assert all(unit["status"] == "AVAILABLE" for unit in client.get("/api/units").json())
+
+
+def test_premature_voice_confirmation_cannot_close_incident(tmp_path):
+    with TestClient(make_app(tmp_path, delay=30)) as client:
+        client.post("/vapi/webhook", json=fixture("pilot_report_emergency.json"))
+        wait_for(lambda: get_only_incident(client))
+        confirm = client.post("/vapi/webhook", json=fixture("pilot_confirm_plan.json"))
+        assert confirm.status_code == 200
+        assert "Plan confirmed" not in confirm.json()["results"][0]["result"]
+        assert get_only_incident(client)["status"] != "CONFIRMED"
+
+
+def test_failed_pilot_playback_cannot_be_confirmed(tmp_path):
+    vapi = FakeVapi(say_ok=False)
+    with TestClient(make_app(tmp_path, vapi=vapi)) as client:
+        client.post("/vapi/webhook", json=fixture("pilot_report_emergency.json"))
+
+        def attempted_briefing():
+            incident = get_only_incident(client)
+            return incident if incident and incident["status"] == "UNIT_ACCEPTED" and len(vapi.said) >= 2 else None
+
+        incident = wait_for(attempted_briefing)
+        confirm = client.post("/vapi/webhook", json=fixture("pilot_confirm_plan.json"))
+        assert confirm.status_code == 200
+        assert "Plan confirmed" not in confirm.json()["results"][0]["result"]
+        assert client.get(f"/api/incidents/{incident['id']}").json()["status"] == "UNIT_ACCEPTED"
+        assert client.app.state.voice.registry.pilot_calls["fake-pilot-call-1"].confirmed is False
+
+
+def test_dashboard_snapshot_and_events_exclude_private_voice_configuration(tmp_path):
+    body = fixture("pilot_report_emergency.json")
+    body["message"]["call"]["monitor"]["controlUrl"] = "https://private.invalid/SECRET_CONTROL_TOKEN"
+    with TestClient(make_app(tmp_path)) as client:
+        client.post("/vapi/webhook", json=body)
+        wait_for(lambda: get_only_incident(client))
+        snapshot = client.get("/api/snapshot")
+        assert snapshot.status_code == 200
+        data = snapshot.json()
+        assert {"incidents", "units", "events", "airports"} <= data.keys()
+        serialized = json.dumps(data)
+        for secret in ("SECRET_CONTROL_TOKEN", "controlUrl", "control_url", "+15551234567", "+15557654321", "PRIVATE_VAPI_KEY_TEST_SENTINEL"):
+            assert secret not in serialized
+        assert '"phone"' not in serialized
+
+        events = client.get("/api/events").json()
+        assert events
+        sequences = [item["sequence"] for item in events]
+        assert sequences == sorted(set(sequences))
+        tail = client.get("/api/events", params={"after": sequences[-1]}).json()
+        assert all(item["sequence"] > sequences[-1] for item in tail)
+
+
+def test_dashboard_api_auth_and_websocket_first_message(tmp_path):
+    with TestClient(make_app(tmp_path, api_token="dashboard-secret")) as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/api/snapshot").status_code == 401
+        authorized = client.get("/api/snapshot", headers={"Authorization": "Bearer dashboard-secret"})
+        assert authorized.status_code == 200
+        with client.websocket_connect("/ws/events") as websocket:
+            websocket.send_json({"token": "dashboard-secret"})
+            snapshot = websocket.receive_json()
+            assert snapshot["type"] == "snapshot"
+            assert snapshot["data"]["incidents"] == []
+        with pytest.raises(WebSocketDisconnect) as denied:
+            with client.websocket_connect("/ws/events") as websocket:
+                websocket.send_json({"token": "incorrect"})
+                websocket.receive_json()
+        assert denied.value.code == 1008
+
+
+def test_integrated_vapi_webhook_retains_separate_secret_auth(tmp_path):
+    with TestClient(make_app(tmp_path, api_token="dashboard-secret", webhook_secret="vapi-secret")) as client:
+        body = fixture("pilot_report_emergency.json")
+        assert client.post("/vapi/webhook", json=body).status_code == 401
+        accepted = client.post("/vapi/webhook", json=body, headers={"X-Vapi-Secret": "vapi-secret"})
+        assert accepted.status_code == 200
+        assert accepted.json()["results"][0]["result"] == "Copy, coordinating now."
