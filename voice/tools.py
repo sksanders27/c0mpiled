@@ -4,6 +4,7 @@ Handlers must return fast (Vapi waits on the webhook); slow work goes through se
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Awaitable, Callable
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from .ports import VoiceService
 
 log = logging.getLogger("voice.tools")
+CONFIRM_TIMEOUT_S = 1.5
 
 _TYPE_SYNONYMS = {
     "FIRE": EmergencyType.FIRE_SMOKE, "SMOKE": EmergencyType.FIRE_SMOKE,
@@ -94,23 +96,33 @@ async def confirm_plan(service: "VoiceService", call_id: str, args: dict) -> str
     pc = service.registry.pilot_calls.get(call_id)
     if pc is None or pc.incident_id is None:
         return "No emergency on file yet. Stand by."
-    if pc.plan is None:
+    if pc.ended:
+        return "The pilot call has ended. The plan has not been confirmed."
+    if pc.plan is None or not pc.plan_delivered:
         return "No plan has been issued yet. Tell the pilot to stand by for dispatch."
     if pc.confirmed:
         return "Plan already confirmed."
-    pc.confirmed = True
+    if pc.confirming:
+        return "Confirmation is being recorded. Stand by."
     readback = _opt_str(args.get("readback")) or "wilco"
-    service.emit("pilot_confirmed", incident_id=pc.incident_id, call_id=call_id, readback=readback)
-    service.spawn(_pilot_confirm(service, pc.incident_id, readback), name=f"confirm:{pc.incident_id}")
-    return "Plan confirmed. Emergency services are standing by for your arrival. SkyWatch standing by."
-
-
-async def _pilot_confirm(service: "VoiceService", incident_id: str, readback: str) -> None:
+    pc.confirming = True
     try:
-        await service.dispatch.on_pilot_confirm(incident_id, readback)
+        # Same-process backend validation is authoritative. Bound the wait so
+        # the webhook still responds promptly if the backend stops responding.
+        await asyncio.wait_for(
+            service.dispatch.on_pilot_confirm(pc.incident_id, readback),
+            timeout=CONFIRM_TIMEOUT_S,
+        )
     except Exception as e:
         log.error("dispatch.on_pilot_confirm failed: %s", e)
-        service.emit("dispatch_error", incident_id=incident_id, op="on_pilot_confirm", error=str(e)[:300])
+        service.emit("dispatch_error", incident_id=pc.incident_id,
+                     op="on_pilot_confirm", error=str(e)[:300])
+        return "The plan could not be confirmed. Stand by for dispatch."
+    finally:
+        pc.confirming = False
+    pc.confirmed = True
+    service.emit("pilot_confirmed", incident_id=pc.incident_id, call_id=call_id, readback=readback)
+    return "Plan confirmed. Emergency services are standing by for your arrival. SkyWatch standing by."
 
 
 async def _unit_answer(service: "VoiceService", call_id: str, accepted: bool, reason: str | None) -> str:

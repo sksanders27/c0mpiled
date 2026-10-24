@@ -67,6 +67,21 @@ class VoiceService:
     def bind_dispatch(self, dispatch: DispatchPort) -> None:
         self.dispatch = dispatch
 
+    async def aclose(self) -> None:
+        """Cancel and await Voice-owned work before the caller closes Vapi.
+
+        This does not place calls or close the injected Vapi client. Its owner
+        must close that client after this method returns.
+        """
+        current = asyncio.current_task()
+        while pending := [task for task in self._tasks if task is not current]:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            # Already-finished tasks can make gather return without yielding;
+            # do not depend on their scheduled done callbacks to clear the set.
+            self._tasks.difference_update(pending)
+
     # --- plumbing -------------------------------------------------------------
     def spawn(self, coro: Awaitable, name: str | None = None) -> asyncio.Task:
         t = asyncio.create_task(coro, name=name)
@@ -224,6 +239,8 @@ class VoiceService:
             self.emit("pilot_control_failed", incident_id=incident_id, reason="no_pilot_call", text=text)
             return
         pc.plan = text
+        pc.plan_delivered = False
+        pc.confirmed = False
         ok = await self._speak(
             pc.call_id,
             incident_id,
@@ -231,7 +248,9 @@ class VoiceService:
             note=(f"Dispatch update (already spoken to the pilot): {text} "
                   "Wait for the pilot to affirm, then call confirm_plan with their readback."),
         )
-        self.emit("pilot_briefed", incident_id=incident_id, call_id=pc.call_id, text=text, delivered=ok)
+        pc.plan_delivered = ok and not pc.ended
+        self.emit("pilot_briefed", incident_id=incident_id, call_id=pc.call_id, text=text,
+                  delivered=pc.plan_delivered)
 
     async def update_pilot(self, incident_id: str, text: str) -> None:
         pc = await self._wait_pilot(incident_id)

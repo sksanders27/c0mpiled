@@ -12,7 +12,9 @@ class PilotCall:
     incident_id: str | None = None
     reporting: bool = False  # report_emergency accepted, incident not created yet
     plan: str | None = None  # last plan briefed via brief_pilot
+    plan_delivered: bool = False  # live call control accepted the final plan
     confirmed: bool = False
+    confirming: bool = False  # prevent concurrent callbacks while backend decides
     ended: bool = False
 
 
