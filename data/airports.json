@@ -1,0 +1,18 @@
+{
+  "metadata": {
+    "source": "OurAirports open airport data",
+    "url": "https://ourairports.com/data/",
+    "license": "Public domain",
+    "note": "Small Southern California demonstration seed; coordinates are rounded. Proximity does not establish airport suitability. Replace with OurAirports airports.csv through airports_path for broader coverage."
+  },
+  "airports": [
+    {"icao": "KSAN", "name": "San Diego International Airport", "latitude": 32.7336, "longitude": -117.1897},
+    {"icao": "KMYF", "name": "Montgomery-Gibbs Executive Airport", "latitude": 32.8157, "longitude": -117.1399},
+    {"icao": "KSEE", "name": "Gillespie Field", "latitude": 32.8262, "longitude": -116.9724},
+    {"icao": "KCRQ", "name": "McClellan-Palomar Airport", "latitude": 33.1283, "longitude": -117.2800},
+    {"icao": "KSDM", "name": "Brown Field Municipal Airport", "latitude": 32.5723, "longitude": -116.9800},
+    {"icao": "KRNM", "name": "Ramona Airport", "latitude": 33.0392, "longitude": -116.9150},
+    {"icao": "KSNA", "name": "John Wayne Orange County International Airport", "latitude": 33.6757, "longitude": -117.8680},
+    {"icao": "KLAX", "name": "Los Angeles International Airport", "latitude": 33.9425, "longitude": -118.4080}
+  ]
+}
