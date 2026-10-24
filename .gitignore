@@ -5,3 +5,7 @@ logs/
 .venv/
 __pycache__/
 .pytest_cache/
+*.py[cod]
+tmp/
+output/
+backend-integration.patch
