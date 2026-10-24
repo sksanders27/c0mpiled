@@ -53,6 +53,7 @@ def make_app(tmp_path, *, delay=0.01, max_calls=4, **backend_overrides):
         log_dir=tmp_path,
         sim_units=True,
         sim_unit_delay_s=delay,
+        pilot_say_gap_s=0,
         unit_call_timeout_s=45,
         max_outbound_calls=max_calls,
     )
@@ -215,7 +216,7 @@ def test_out_of_area_provider_does_not_assign_local_responders(tmp_path):
         }
 
     app = create_app(
-        settings=Settings(log_dir=tmp_path, sim_units=True, sim_unit_delay_s=0.01),
+        settings=Settings(log_dir=tmp_path, sim_units=True, sim_unit_delay_s=0.01, pilot_say_gap_s=0),
         backend_settings=BackendSettings(aircraft_mode="live", allow_aircraft_fallback=False, offline_voice=True),
         aircraft_provider=provider,
         vapi_client=RecordingVapi(),

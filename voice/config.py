@@ -55,6 +55,7 @@ class Settings:
     max_outbound_calls: int = 4
     sim_unit_delay_s: float = 4.0
     mock_dispatch_delay_s: float = 2.0
+    pilot_say_gap_s: float = 1.5  # silence between consecutive dispatch messages to the pilot
     log_dir: Path = ROOT / "logs"
 
     @classmethod
@@ -77,6 +78,7 @@ class Settings:
             max_outbound_calls=_int("MAX_OUTBOUND_CALLS", 4),
             sim_unit_delay_s=_float("SIM_UNIT_DELAY_S", 4.0),
             mock_dispatch_delay_s=_float("MOCK_DISPATCH_DELAY_S", 2.0),
+            pilot_say_gap_s=_float("PILOT_SAY_GAP_S", 1.5),
         )
 
     @property

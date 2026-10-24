@@ -62,6 +62,9 @@ class VoiceService:
         self.dispatch = dispatch
         self.unit_assistant_id = unit_assistant_id or load_vapi_ids().get("unit_assistant_id")
         self._tasks: set[asyncio.Task] = set()
+        # Per pilot call: serialize `say` so back-to-back updates don't run together.
+        self._say_locks: dict[str, asyncio.Lock] = {}
+        self._say_free_at: dict[str, float] = {}  # loop time when the last message should have finished
         settings.log_dir.mkdir(parents=True, exist_ok=True)
 
     def bind_dispatch(self, dispatch: DispatchPort) -> None:
@@ -275,7 +278,22 @@ class VoiceService:
                 return pc
             await asyncio.sleep(0.1)
 
+    SECONDS_PER_WORD = 0.35  # rough TTS pace; `say` returns when queued, not when spoken
+
     async def _speak(self, call_id: str, incident_id: str | None, spoken: str, note: str) -> bool:
+        lock = self._say_locks.setdefault(call_id, asyncio.Lock())
+        async with lock:
+            loop = asyncio.get_running_loop()
+            wait = self._say_free_at.get(call_id, 0.0) - loop.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            ok = await self._speak_now(call_id, incident_id, spoken, note)
+            if ok and self.settings.pilot_say_gap_s > 0:
+                speech = min(10.0, len(spoken.split()) * self.SECONDS_PER_WORD)
+                self._say_free_at[call_id] = loop.time() + speech + self.settings.pilot_say_gap_s
+            return ok
+
+    async def _speak_now(self, call_id: str, incident_id: str | None, spoken: str, note: str) -> bool:
         pc = self.registry.pilot(call_id)
         if pc.ended:
             self.emit("pilot_control_failed", incident_id=incident_id, call_id=call_id, reason="call_ended")

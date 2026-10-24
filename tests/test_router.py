@@ -76,7 +76,8 @@ def fixture(name, **replace):
 
 def make(tmp_path, dispatch="mock", **overrides):
     s = Settings(log_dir=tmp_path, sim_unit_delay_s=0.05, mock_dispatch_delay_s=0.05,
-                 unit_phones=["+15550000001", "+15550000002"], vapi_phone_number_id="pn-1", **overrides)
+                 unit_phones=["+15550000001", "+15550000002"], vapi_phone_number_id="pn-1",
+                 **{"pilot_say_gap_s": 0, **overrides})
     vapi = FakeVapi()
     svc = VoiceService(s, vapi, unit_assistant_id="unit-assistant-fake")
     d = MockDispatch(svc, s) if dispatch == "mock" else RecordingDispatch()
@@ -296,3 +297,23 @@ async def test_create_incident_failure_is_spoken_to_pilot(tmp_path):
     assert "already has an active incident" in err["error"]
     assert any(e["kind"] == "escalate_human" and e["pilot_notified"] for e in events)
     assert svc.registry.pilot_calls["fake-pilot-call-1"].reporting is False
+
+
+@pytest.mark.anyio
+async def test_pilot_says_are_serialized_with_a_gap(tmp_path):
+    svc, vapi, d, c = make(tmp_path, dispatch="rec", pilot_say_gap_s=0.2)
+    svc.SECONDS_PER_WORD = 0.05
+    stamps = []
+    orig = vapi.say
+
+    async def timed_say(url, text):
+        stamps.append((asyncio.get_running_loop().time(), text))
+        return await orig(url, text)
+
+    vapi.say = timed_say
+    await c.post("/vapi/webhook", json=fixture("pilot_report_emergency.json"))
+    assert await wait_for(lambda: svc.registry.pilot_calls[PILOT].incident_id)
+    await asyncio.gather(svc.update_pilot("INC-1", "one two three four"), svc.brief_pilot("INC-1", "plan"))
+    assert [t for _, t in stamps] == ["one two three four", "plan Read back the plan, or say wilco."]
+    # second message waits for ~4 words * 0.05s + 0.2s gap after the first
+    assert stamps[1][0] - stamps[0][0] >= 0.39

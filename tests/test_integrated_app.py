@@ -51,6 +51,7 @@ def make_app(tmp_path, *, vapi=None, delay=0.01, api_token=None, webhook_secret=
         log_dir=tmp_path,
         sim_units=True,
         sim_unit_delay_s=delay,
+        pilot_say_gap_s=0,
         max_outbound_calls=4,
         vapi_webhook_secret=webhook_secret,
         vapi_api_key="PRIVATE_VAPI_KEY_TEST_SENTINEL",

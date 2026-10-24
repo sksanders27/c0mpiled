@@ -32,6 +32,11 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
     - `/pilot/config` returns only the public key and the pilot assistant ID.
     - Not yet tested with a real browser call.
   - [x] #3 Tool filler suppressed: each function tool has a `request-start` message ("Copy." / "Roger."), which replaces Vapi's default "One moment" filler. It takes effect on the next `setup_vapi.py` run.
+  - [x] #4 Pilot `say` calls serialized:
+    - per-call lock;
+    - each message waits for the previous one's estimated speech time (0.35 s/word) plus `PILOT_SAY_GAP_S` (default 1.5 s).
+    - Needs a `main:app` restart to take effect.
+  - [ ] #5 Real outbound unit calls: blocked until a Twilio number is imported into Vapi.
 
 **Time plan:**
 - Integration merged and green by **4:45 PM**
