@@ -6,34 +6,59 @@
   <title>SkyWatch Observer</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <style>
-    :root { color-scheme: dark; font: 15px/1.45 system-ui, sans-serif; background: #0b1220; color: #e8eef8; }
+    :root { color-scheme: dark; font: 15px/1.45 system-ui, sans-serif; background: #0b1220; color: #e8eef8;
+            --available: #8fa3bf; --reserved: #f2b84b; --assigned: #4cd38a; --declined: #ff7b86; --dispatch: #b58cff; --airport: #70b7ff; }
     * { box-sizing: border-box; }
-    body { margin: 0; }
-    header { padding: 16px 22px; border-bottom: 1px solid #26334b; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    body { margin: 0; background: #0b1220; }
+    header { padding: 16px 22px; border-bottom: 1px solid #26334b; display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
     h1 { font-size: 18px; margin: 0; letter-spacing: .03em; }
     .subtle { color: #9cacc3; font-size: 13px; }
-    main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: calc(100vh - 61px); }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; height: calc(100vh - 61px); }
     #map { min-height: 360px; background: #172236; }
     aside { overflow: auto; border-left: 1px solid #26334b; padding: 18px; }
     h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #9cacc3; margin: 0 0 12px; }
     .card { padding: 13px; margin: 0 0 10px; border: 1px solid #26334b; background: #111b2c; border-radius: 10px; }
-    .title { font-weight: 650; }
+    .title { font-weight: 650; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .status { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; text-transform: uppercase; background: #244b3c; color: #a8f0c9; }
     .status.sample { background: #654719; color: #ffe0a0; }
     .status.unavailable, .status.not_found, .status.position_unavailable { background: #4b3034; color: #ffc0c5; }
+    .status.inc { background: #23324d; color: #cfe0ff; }
+    .status.inc.CONFIRMED, .status.inc.RESOLVED { background: #1f5a3c; color: #a8f0c9; }
+    .status.inc.ESCALATED, .status.inc.FAILED, .status.inc.NEEDS_CLARIFICATION { background: #5a2530; color: #ffc0c5; }
+    .status.inc.UNIT_PENDING, .status.inc.UNIT_ACCEPTED, .status.inc.PILOT_BRIEFED { background: #5a4519; color: #ffe0a0; }
     .row { margin-top: 6px; color: #b6c3d5; font-size: 13px; }
+    .row b { color: #e8eef8; font-weight: 600; }
     .warning { color: #ffd38a; }
     .empty { color: #9cacc3; padding: 12px 0; }
+    .asg { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #26334b; font-size: 13px; }
+    .asg .reason { grid-column: 1 / -1; color: #9cacc3; font-size: 12px; }
+    .pill { font-size: 11px; padding: 1px 7px; border-radius: 99px; text-transform: uppercase; font-weight: 600; color: #0b1220; }
+    .pill.PENDING { background: var(--reserved); } .pill.ACCEPTED { background: var(--assigned); }
+    .pill.DECLINED, .pill.TIMED_OUT { background: var(--declined); } .pill.CANCELLED { background: var(--available); }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #9cacc3; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+    .unit-icon { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #0b1220; box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+    .dispatch-icon { width: 18px; height: 18px; transform: rotate(45deg); background: var(--dispatch); border: 2px solid #0b1220; box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
     .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #111b2c; color: #e8eef8; }
     @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; height: auto; min-height: calc(100vh - 61px); } aside { border-left: 0; border-top: 1px solid #26334b; } }
   </style>
 </head>
 <body>
-  <header><h1>SkyWatch <span class="subtle">/ Observer</span></h1><span class="subtle" id="connection">Connecting…</span></header>
+  <header>
+    <h1>SkyWatch <span class="subtle">/ Observer</span></h1>
+    <div class="legend" aria-label="Map legend">
+      <span><i style="background:var(--dispatch);border-radius:2px;transform:rotate(45deg)"></i>Dispatcher</span>
+      <span><i style="background:var(--airport)"></i>Airport</span>
+      <span><i style="background:var(--available)"></i>Unit available</span>
+      <span><i style="background:var(--reserved)"></i>Reserved (calling)</span>
+      <span><i style="background:var(--assigned)"></i>Assigned</span>
+    </div>
+    <span class="subtle" id="connection">Connecting…</span>
+  </header>
   <main>
-    <div id="map" aria-label="Aircraft and nearby airports map"></div>
+    <div id="map" aria-label="Aircraft, airports, dispatcher and response units map"></div>
     <aside>
-      <section><h2>Aircraft</h2><div id="aircraft-list" class="empty">Waiting for lookup results…</div></section>
+      <section><h2>Incidents</h2><div id="aircraft-list" class="empty">Waiting for lookup results…</div></section>
       <section style="margin-top:22px"><h2>Incident timeline</h2><div id="timeline" class="empty">Waiting for events…</div></section>
     </aside>
   </main>
@@ -45,39 +70,101 @@
     if (map) markers.addTo(map);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const fmt = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, {maximumFractionDigits: 1}) : '—';
+    const words = s => String(s || '').replaceAll('_', ' ').toLowerCase();
+    const UNIT_COLOR = { AVAILABLE: 'var(--available)', RESERVED: 'var(--reserved)', ASSIGNED: 'var(--assigned)' };
+    // Units at one base share coordinates; fan them out slightly by type so all three are visible.
+    const TYPE_OFFSET = { FIRE: [0.012, -0.012], AMBULANCE: [0.012, 0.012], POLICE: [-0.012, 0] };
+    let lastFitKey = '';
+
+    function assignmentsHtml(item) {
+      const list = item.assignments || [];
+      if (!list.length) return '';
+      return list.map(a => `<div class="asg"><span>${esc(a.unit_name)} <span class="subtle">${esc(words(a.unit_type))}</span></span>
+          <span class="pill ${esc(a.status)}">${esc(words(a.status))}</span>
+          ${a.reason ? `<span class="reason">${esc(a.reason)}</span>` : ''}</div>`).join('');
+    }
+
     function render(data) {
       document.getElementById('connection').textContent = 'Live observer feed';
       const incidents = Array.isArray(data.incidents) ? data.incidents : [];
-      document.getElementById('aircraft-list').innerHTML = incidents.length ? incidents.map(item => {
+      const units = Array.isArray(data.units) ? data.units : [];
+      document.getElementById('aircraft-list').innerHTML = incidents.length ? incidents.slice().reverse().map(item => {
         const a = item.aircraft || {}, simulated = Boolean(a.is_mock);
+        const r = item.report || {};
         const nearby = item.nearby_airports || [];
-        return `<article class="card"><div class="title">${esc(item.callsign || 'Unknown callsign')} <span class="status ${simulated ? 'sample' : a.latitude == null ? 'unavailable' : ''}">${simulated ? 'SIMULATED' : a.latitude == null ? 'POSITION UNAVAILABLE' : 'LIVE FEED'}</span></div>
-          <div class="row">Incident ${esc(item.id)} · ${esc(item.status || '')}</div>
+        const ap = item.selected_airport;
+        return `<article class="card"><div class="title">${esc(item.callsign || 'Unknown callsign')}
+            <span class="status inc ${esc(item.status || '')}">${esc(words(item.status))}</span>
+            <span class="status ${simulated ? 'sample' : a.latitude == null ? 'unavailable' : ''}">${simulated ? 'SIMULATED' : a.latitude == null ? 'POSITION UNAVAILABLE' : 'LIVE FEED'}</span></div>
+          <div class="row"><b>${esc(r.severity || '')}</b> · ${esc(words(r.emergency_type))}${r.souls_on_board != null ? ` · ${esc(r.souls_on_board)} souls` : ''}${r.fuel_minutes != null ? ` · ${esc(r.fuel_minutes)} min fuel` : ''}</div>
+          ${r.summary ? `<div class="row">${esc(r.summary)}</div>` : ''}
           ${a.latitude != null ? `<div class="row">Altitude ${fmt(a.altitude_ft)} ft · Ground speed ${fmt(a.ground_speed_kt)} kt · Track ${fmt(a.heading_deg)}°</div>` : '<div class="row">No usable aircraft position</div>'}
+          ${item.dispatcher ? `<div class="row">Dispatcher: <b>${esc(item.dispatcher.name)}</b></div>` : ''}
+          ${ap ? `<div class="row">Coordination airport: <b>${esc(ap.name)}</b> (${esc(ap.icao)})</div>` : ''}
           ${(item.warnings || []).map(w => `<div class="row warning">${esc(w)}</div>`).join('')}
-          ${nearby.map(ap => `<div class="row">${esc(ap.name)} (${esc(ap.icao)}) · ${fmt(Number(ap.distance_km) / 1.852)} NM</div>`).join('') || '<div class="row">No nearby airport data</div>'}</article>`;
-      }).join('') : '<div class="empty">No aircraft lookups yet.</div>';
+          ${assignmentsHtml(item)}
+          ${!ap ? (nearby.map(n => `<div class="row">${esc(n.name)} (${esc(n.icao)}) · ${fmt(Number(n.distance_km) / 1.852)} NM</div>`).join('') || '<div class="row">No nearby airport data</div>') : ''}
+          <div class="row subtle">Incident ${esc(item.id)}</div></article>`;
+      }).join('') : '<div class="empty">No incidents yet. Call the SkyWatch line to declare an emergency.</div>';
+
       const events = (data.events || []).slice(-35).reverse();
       document.getElementById('timeline').innerHTML = events.length ? events.map(e => {
         const voice = (e.data || {}).voice_event || {};
         return `<article class="card"><div class="title">${esc(String(e.kind || 'event').replaceAll('_',' '))}</div><div class="row">${esc(e.incident_id || '')}${voice.text ? ` · ${esc(voice.text)}` : ''}</div><div class="row">${esc(e.message || new Date(e.timestamp || Date.now()).toLocaleTimeString())}</div></article>`;
       }).join('') : '<div class="empty">No events yet.</div>';
+
       if (!map) return;
       markers.clearLayers();
       const bounds = [];
+      const active = incidents.filter(i => !['CONFIRMED', 'RESOLVED', 'CANCELLED', 'FAILED'].includes(i.status));
+      const focus = active.length ? active : incidents.slice(-1);
+      const involved = new Set(focus.flatMap(i => (i.assignments || []).map(a => a.unit_id)));
+      const unitPos = {};
+
+      for (const u of units) {
+        if (!Number.isFinite(u.latitude) || !Number.isFinite(u.longitude)) continue;
+        const off = TYPE_OFFSET[u.unit_type] || [0, 0];
+        const pos = [u.latitude + off[0], u.longitude + off[1]]; unitPos[u.id] = pos;
+        if (involved.has(u.id)) bounds.push(pos);
+        const color = UNIT_COLOR[u.status] || UNIT_COLOR.AVAILABLE;
+        L.marker(pos, { icon: L.divIcon({ className: '', html: `<div class="unit-icon" style="background:${color}"></div>`, iconSize: [14, 14] }),
+                        zIndexOffset: u.status === 'AVAILABLE' ? 0 : 500 })
+          .addTo(markers).bindTooltip(`${esc(u.name)} · ${esc(words(u.status))}`, { direction: 'top' });
+      }
+
       for (const item of incidents) {
         const a = item.aircraft || {};
+        const isFocus = focus.includes(item);
+        const ap = item.selected_airport;
+        if (item.dispatcher && Number.isFinite(item.dispatcher.latitude)) {
+          const dpos = [item.dispatcher.latitude, item.dispatcher.longitude];
+          if (isFocus) bounds.push(dpos);
+          L.marker(dpos, { icon: L.divIcon({ className: '', html: '<div class="dispatch-icon"></div>', iconSize: [18, 18] }), zIndexOffset: 800 })
+            .addTo(markers).bindTooltip(`Dispatcher: ${esc(item.dispatcher.name)}`, { direction: 'top' });
+        }
+        if (ap && Number.isFinite(ap.latitude)) {
+          for (const asg of item.assignments || []) {
+            const p = unitPos[asg.unit_id];
+            if (!p || !['PENDING', 'ACCEPTED'].includes(asg.status)) continue;
+            L.polyline([p, [ap.latitude, ap.longitude]], { color: asg.status === 'ACCEPTED' ? '#4cd38a' : '#f2b84b', weight: 2, dashArray: '6 6', opacity: .9 }).addTo(markers);
+          }
+        }
         if (!Number.isFinite(a.latitude) || !Number.isFinite(a.longitude)) continue;
-        const pos = [a.latitude, a.longitude]; bounds.push(pos);
-        L.marker(pos).addTo(markers).bindPopup(`<b>${esc(item.callsign || 'Unknown callsign')}</b><br>${a.is_mock ? 'SIMULATED AIRCRAFT' : 'Live feed'}<br>Ground track ${fmt(a.heading_deg)}°`);
+        const pos = [a.latitude, a.longitude]; if (isFocus) bounds.push(pos);
+        L.marker(pos, { zIndexOffset: 1000 }).addTo(markers).bindPopup(`<b>${esc(item.callsign || 'Unknown callsign')}</b><br>${a.is_mock ? 'SIMULATED AIRCRAFT' : 'Live feed'}<br>Ground track ${fmt(a.heading_deg)}°`);
+        if (ap && Number.isFinite(ap.latitude)) L.polyline([pos, [ap.latitude, ap.longitude]], { color: '#70b7ff', weight: 2, opacity: .7 }).addTo(markers);
         for (const airport of item.nearby_airports || []) {
           if (!Number.isFinite(airport.latitude) || !Number.isFinite(airport.longitude)) continue;
-          const airportPos = [airport.latitude, airport.longitude]; bounds.push(airportPos);
-          L.circleMarker(airportPos, {radius: 5, color:'#70b7ff', fillOpacity:.85}).addTo(markers)
-            .bindPopup(`<b>${esc(airport.name)}</b><br>${esc(airport.icao)} · ${fmt(Number(airport.distance_km) / 1.852)} NM`);
+          const airportPos = [airport.latitude, airport.longitude];
+          const selected = ap && ap.icao === airport.icao;
+          if (isFocus && (selected || !ap)) bounds.push(airportPos);
+          L.circleMarker(airportPos, { radius: selected ? 8 : 5, color: '#70b7ff', weight: selected ? 3 : 1, fillOpacity: .85 }).addTo(markers)
+            .bindPopup(`<b>${esc(airport.name)}</b><br>${esc(airport.icao)} · ${fmt(Number(airport.distance_km) / 1.852)} NM${selected ? '<br>Coordination airport' : ''}`);
         }
       }
-      if (bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:10});
+      // Only re-fit when the story changes, so a judge can pan/zoom without the map snapping back.
+      const fitKey = focus.map(i => `${i.id}:${i.status}:${(i.assignments || []).length}`).join('|');
+      if (bounds.length && fitKey !== lastFitKey) { map.fitBounds(bounds, { padding: [45, 45], maxZoom: 11 }); lastFitKey = fitKey; }
     }
     const tokenKey = 'skywatch-observer-token';
     async function refresh() {

@@ -21,6 +21,12 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
   - **Fixed adsb.lol 403:** it rejects httpx's default User-Agent, so every "live" lookup had been silently falling back to a sample. `main.py` now sends a SkyWatch User-Agent.
 - [ ] 4.3 Live call (Voice owner places it)
 - [ ] 4.4 Demo-value items
+  - [x] #1 Observer upgrade:
+    - dispatcher marker,
+    - unit markers colored by status (available/reserved/assigned),
+    - dashed unit→airport lines,
+    - assignments list (unit, status, reason) and dispatcher/airport on each incident card.
+    - The map only re-fits when the story changes.
 
 **Time plan:**
 - Integration merged and green by **4:45 PM**
