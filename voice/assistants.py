@@ -44,7 +44,8 @@ def _server(s: Settings) -> dict:
     return server
 
 
-def _fn_tool(s: Settings, name: str, description: str, properties: dict, required: list[str]) -> dict:
+def _fn_tool(s: Settings, name: str, description: str, properties: dict, required: list[str],
+             start: str = "Roger.") -> dict:
     return {
         "type": "function",
         "function": {
@@ -53,6 +54,8 @@ def _fn_tool(s: Settings, name: str, description: str, properties: dict, require
             "parameters": {"type": "object", "properties": properties, "required": required},
         },
         "server": _server(s),
+        # Any request-start message replaces Vapi's random default filler ("One moment", "Hold on a sec").
+        "messages": [{"type": "request-start", "content": start}],
     }
 
 
@@ -78,6 +81,7 @@ def pilot_tools(s: Settings) -> list[dict]:
                 "summary": {"type": "string", "description": "One-sentence summary of the emergency."},
             },
             ["callsign_raw", "emergency_type", "severity", "summary"],
+            start="Copy.",
         ),
         _fn_tool(
             s,
