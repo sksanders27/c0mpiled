@@ -47,38 +47,52 @@
     const fmt = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, {maximumFractionDigits: 1}) : '—';
     function render(data) {
       document.getElementById('connection').textContent = 'Live observer feed';
-      const incidents = data.incidents || {};
-      const aircraftEntries = Object.entries(incidents);
-      document.getElementById('aircraft-list').innerHTML = aircraftEntries.length ? aircraftEntries.map(([id, item]) => {
-        const c = item.aircraft_context || {}, a = c.aircraft || {};
-        const simulated = Boolean(a.simulated);
-        return `<article class="card"><div class="title">${esc(c.callsign || 'Unknown callsign')} <span class="status ${esc(c.status)}">${simulated ? 'SIMULATED SAMPLE' : esc(c.status || 'unknown')}</span></div>
-          <div class="row">Incident ${esc(id)}</div><div class="row">Altitude ${fmt(a.altitude_ft)} ft · Ground speed ${fmt(a.speed_knots)} kt · Track ${fmt(a.ground_track_deg)}°</div>
-          ${c.airports_source === 'sample_airports' ? '<div class="row warning">Airport list: incomplete regional sample</div>' : ''}
-          ${c.warning ? `<div class="row warning">${esc(c.warning)}</div>` : ''}
-          ${(c.nearby_airports || []).map(ap => `<div class="row">${esc(ap.name)} (${esc(ap.ident)}) · ${fmt(ap.distance_nm)} NM</div>`).join('') || '<div class="row">No nearby airport data</div>'}</article>`;
+      const incidents = Array.isArray(data.incidents) ? data.incidents : [];
+      document.getElementById('aircraft-list').innerHTML = incidents.length ? incidents.map(item => {
+        const a = item.aircraft || {}, simulated = Boolean(a.is_mock);
+        const nearby = item.nearby_airports || [];
+        return `<article class="card"><div class="title">${esc(item.callsign || 'Unknown callsign')} <span class="status ${simulated ? 'sample' : a.latitude == null ? 'unavailable' : ''}">${simulated ? 'SIMULATED' : a.latitude == null ? 'POSITION UNAVAILABLE' : 'LIVE FEED'}</span></div>
+          <div class="row">Incident ${esc(item.id)} · ${esc(item.status || '')}</div>
+          ${a.latitude != null ? `<div class="row">Altitude ${fmt(a.altitude_ft)} ft · Ground speed ${fmt(a.ground_speed_kt)} kt · Track ${fmt(a.heading_deg)}°</div>` : '<div class="row">No usable aircraft position</div>'}
+          ${(item.warnings || []).map(w => `<div class="row warning">${esc(w)}</div>`).join('')}
+          ${nearby.map(ap => `<div class="row">${esc(ap.name)} (${esc(ap.icao)}) · ${fmt(Number(ap.distance_km) / 1.852)} NM</div>`).join('') || '<div class="row">No nearby airport data</div>'}</article>`;
       }).join('') : '<div class="empty">No aircraft lookups yet.</div>';
       const events = (data.events || []).slice(-35).reverse();
-      document.getElementById('timeline').innerHTML = events.length ? events.map(e => `<article class="card"><div class="title">${esc(String(e.kind || 'event').replaceAll('_',' '))}</div><div class="row">${esc(e.incident_id || '')}${e.callsign ? ` · ${esc(e.callsign)}` : ''}${e.status ? ` · ${esc(e.status)}` : ''}</div><div class="row">${esc(e.text || e.reason || e.airport || new Date(e.ts || Date.now()).toLocaleTimeString())}</div></article>`).join('') : '<div class="empty">No events yet.</div>';
+      document.getElementById('timeline').innerHTML = events.length ? events.map(e => {
+        const voice = (e.data || {}).voice_event || {};
+        return `<article class="card"><div class="title">${esc(String(e.kind || 'event').replaceAll('_',' '))}</div><div class="row">${esc(e.incident_id || '')}${voice.text ? ` · ${esc(voice.text)}` : ''}</div><div class="row">${esc(e.message || new Date(e.timestamp || Date.now()).toLocaleTimeString())}</div></article>`;
+      }).join('') : '<div class="empty">No events yet.</div>';
       if (!map) return;
       markers.clearLayers();
       const bounds = [];
-      for (const [id, item] of aircraftEntries) {
-        const c = item.aircraft_context || {}, a = c.aircraft || {};
-        if (!['live','sample'].includes(c.status) || !Number.isFinite(a.latitude) || !Number.isFinite(a.longitude)) continue;
+      for (const item of incidents) {
+        const a = item.aircraft || {};
+        if (!Number.isFinite(a.latitude) || !Number.isFinite(a.longitude)) continue;
         const pos = [a.latitude, a.longitude]; bounds.push(pos);
-        L.marker(pos).addTo(markers).bindPopup(`<b>${esc(c.callsign)}</b><br>${a.simulated ? 'SIMULATED SAMPLE' : 'Live feed'}<br>Ground track ${fmt(a.ground_track_deg)}°`);
-        for (const airport of c.nearby_airports || []) {
+        L.marker(pos).addTo(markers).bindPopup(`<b>${esc(item.callsign || 'Unknown callsign')}</b><br>${a.is_mock ? 'SIMULATED AIRCRAFT' : 'Live feed'}<br>Ground track ${fmt(a.heading_deg)}°`);
+        for (const airport of item.nearby_airports || []) {
           if (!Number.isFinite(airport.latitude) || !Number.isFinite(airport.longitude)) continue;
           const airportPos = [airport.latitude, airport.longitude]; bounds.push(airportPos);
           L.circleMarker(airportPos, {radius: 5, color:'#70b7ff', fillOpacity:.85}).addTo(markers)
-            .bindPopup(`<b>${esc(airport.name)}</b><br>${esc(airport.ident)} · ${fmt(airport.distance_nm)} NM`);
+            .bindPopup(`<b>${esc(airport.name)}</b><br>${esc(airport.icao)} · ${fmt(Number(airport.distance_km) / 1.852)} NM`);
         }
       }
       if (bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:10});
     }
+    const tokenKey = 'skywatch-observer-token';
     async function refresh() {
-      try { const response = await fetch('/observer/state', {cache:'no-store'}); if (!response.ok) throw new Error(response.status); render(await response.json()); }
+      try {
+        let token = sessionStorage.getItem(tokenKey) || '';
+        let response = await fetch('/observer/state', {cache:'no-store', headers: token ? {Authorization: `Bearer ${token}`} : {}});
+        if (response.status === 401) {
+          token = prompt('Enter the observer API token');
+          if (!token) throw new Error('Observer token required');
+          sessionStorage.setItem(tokenKey, token);
+          response = await fetch('/observer/state', {cache:'no-store', headers: {Authorization: `Bearer ${token}`} });
+        }
+        if (!response.ok) throw new Error(response.status);
+        render(await response.json());
+      }
       catch (_) { document.getElementById('connection').textContent = 'Observer feed unavailable'; }
     }
     refresh(); setInterval(refresh, 1200);
