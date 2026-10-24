@@ -71,6 +71,25 @@ Switching modes means editing `.env` and restarting. Every live mode runs `uvico
 
 **`OFFLINE_VOICE` defaults to true.** If it isn't explicitly `0`, live call control goes to an offline stub, and a real pilot never hears dispatch updates.
 
+### Which teammate's phone rings (real unit calls only)
+
+`DispatchEngine` maps units in seed order onto `UNIT_PHONE_1..n`, cycling through them. `main:app` logs the mapping at startup, with phones masked to the last 4 digits. With two phones:
+
+| Phone | Units |
+|---|---|
+| `UNIT_PHONE_1` | fire-1, police-1, ambulance-2, fire-3, police-3 |
+| `UNIT_PHONE_2` | ambulance-1, fire-2, police-2, ambulance-3 |
+
+For a MEDICAL emergency near San Diego, expect ambulance-1 (phone 2) first, then ambulance-2 (phone 1).
+
+### Between rehearsals
+
+`POST /dev/reset` clears incidents, reservations, events and voice call state without a restart. It uses the same bearer auth as `/api/*`, so it's open when `API_TOKEN` is blank. Without a reset, re-using a callsign that still has an active incident returns 409, and the pilot hears "Dispatch could not open this incident…".
+
+```bash
+curl -X POST http://127.0.0.1:8000/dev/reset
+```
+
 ## Connect the real pilot voice agent
 
 The `voice/` package and the shared `voice.models` contracts remain the integration boundary. `main.py`:

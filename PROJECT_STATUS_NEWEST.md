@@ -10,7 +10,12 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
   - 151 tests pass.
   - `demo_backend.py` reaches CONFIRMED, and `/observer` + `/observer/state` both serve.
   - Two extra test fixes: `tests/conftest.py` pins offline env (tests previously read the local `.env`), and the WebSocket test now tolerates a Starlette 1.10 TestClient exit race.
-- [ ] 4.2 MUST fixes
+- [x] 4.2 MUST fixes.
+  - Startup banner with masked unit→phone map, plus a loud OFFLINE_VOICE warning.
+  - The pilot now hears "Dispatch could not open this incident…" when create_incident fails.
+  - Added `POST /dev/reset`.
+  - Added spoken names for SEE, SDM and RNM.
+  - 156 tests pass.
 - [ ] 4.3 Live call
 - [ ] 4.4 Demo-value items
 

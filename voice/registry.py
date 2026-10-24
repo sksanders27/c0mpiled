@@ -42,6 +42,17 @@ class Registry:
     outbound_count: dict[str, int] = field(default_factory=dict)  # incident_id -> unit calls placed
     tool_results: dict[str, str] = field(default_factory=dict)  # toolCallId -> result (idempotency)
 
+    def reset(self) -> None:
+        """Clear all call state in place (POST /dev/reset between rehearsals)."""
+        for uc in self.unit_calls.values():
+            if uc.timeout_task:
+                uc.timeout_task.cancel()
+        self.pilot_calls.clear()
+        self.incident_to_pilot.clear()
+        self.unit_calls.clear()
+        self.outbound_count.clear()
+        self.tool_results.clear()
+
     def pilot(self, call_id: str) -> PilotCall:
         if call_id not in self.pilot_calls:
             self.pilot_calls[call_id] = PilotCall(call_id)

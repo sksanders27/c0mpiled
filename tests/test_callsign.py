@@ -87,3 +87,15 @@ def test_unsure_returns_none(raw):
 )
 def test_spoken(cs, spoken):
     assert spoken_callsign(cs) == spoken
+
+
+def test_every_seeded_airport_has_a_spoken_name():
+    import json
+    from pathlib import Path
+
+    from voice.models import spoken_airport
+
+    airports = json.loads((Path(__file__).parent.parent / "data" / "airports.json").read_text())["airports"]
+    for a in airports:
+        spoken = spoken_airport(a["icao"])
+        assert spoken != " ".join(a["icao"][1:]), f"{a['icao']} would be spelled out by TTS"

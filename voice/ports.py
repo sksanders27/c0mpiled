@@ -275,7 +275,7 @@ class VoiceService:
                 return pc
             await asyncio.sleep(0.1)
 
-    async def _speak(self, call_id: str, incident_id: str, spoken: str, note: str) -> bool:
+    async def _speak(self, call_id: str, incident_id: str | None, spoken: str, note: str) -> bool:
         pc = self.registry.pilot(call_id)
         if pc.ended:
             self.emit("pilot_control_failed", incident_id=incident_id, call_id=call_id, reason="call_ended")

@@ -79,6 +79,9 @@ SPOKEN_AIRPORT = {
     "NZY": "North Island",
     "MYF": "Montgomery Field",
     "CRQ": "Carlsbad",
+    "SEE": "Gillespie Field",
+    "SDM": "Brown Field",
+    "RNM": "Ramona",
 }
 
 

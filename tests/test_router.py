@@ -272,3 +272,27 @@ async def test_final_transcripts_forwarded(tmp_path):
     await asyncio.sleep(0.05)
     tx = [e for e in d.events if e["kind"] == "transcript"]
     assert len(tx) == 1 and tx[0]["leg"] == "pilot" and "United twelve" in tx[0]["text"]
+
+
+class FailingDispatch(RecordingDispatch):
+    async def create_incident(self, report):
+        from backend.dispatch import DispatchError
+        raise DispatchError(409, "This callsign already has an active incident on another pilot call")
+
+
+@pytest.mark.anyio
+async def test_create_incident_failure_is_spoken_to_pilot(tmp_path):
+    svc, vapi, d, c = make(tmp_path, dispatch="rec")
+    svc.bind_dispatch(FailingDispatch())
+    r = await c.post("/vapi/webhook", json=fixture("pilot_report_emergency.json"))
+    assert r.json()["results"][0]["result"] == "Copy, coordinating now."
+    assert await wait_for(lambda: vapi.said)
+    url, text = vapi.said[0]
+    assert url.endswith("/dev/control/fake-pilot-call-1")
+    assert text.startswith("Dispatch could not open this incident. A human coordinator will take over.")
+    assert "Do not call report_emergency again" in vapi.notes[0][1]
+    events = [json.loads(l) for l in (tmp_path / "events.jsonl").read_text().splitlines()]
+    err = next(e for e in events if e["kind"] == "dispatch_error")
+    assert "already has an active incident" in err["error"]
+    assert any(e["kind"] == "escalate_human" and e["pilot_notified"] for e in events)
+    assert svc.registry.pilot_calls["fake-pilot-call-1"].reporting is False

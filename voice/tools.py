@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("voice.tools")
 CONFIRM_TIMEOUT_S = 1.5
+CREATE_FAILED_MESSAGE = "Dispatch could not open this incident. A human coordinator will take over. Stand by."
 
 _TYPE_SYNONYMS = {
     "FIRE": EmergencyType.FIRE_SMOKE, "SMOKE": EmergencyType.FIRE_SMOKE,
@@ -85,7 +86,15 @@ async def _create_incident(service: "VoiceService", report: EmergencyReport) -> 
     except Exception as e:
         log.exception("create_incident failed")
         service.registry.pilot(report.call_id).reporting = False
-        service.emit("dispatch_error", call_id=report.call_id, op="create_incident", error=str(e)[:300])
+        detail = getattr(e, "detail", None) or str(e) or type(e).__name__
+        service.emit("dispatch_error", call_id=report.call_id, op="create_incident", error=str(detail)[:300])
+        # Never leave the pilot in silence: say so and hand off to a human.
+        delivered = await service._speak(
+            report.call_id, None, spoken=CREATE_FAILED_MESSAGE,
+            note=(f"Dispatch update (already spoken to the pilot): {CREATE_FAILED_MESSAGE} "
+                  "Do not call report_emergency again. Keep the pilot calm and tell them to stand by."),
+        )
+        service.emit("escalate_human", call_id=report.call_id, reason="create_incident_failed", pilot_notified=delivered)
         return
     service.registry.bind_incident(report.call_id, incident_id)
     service.emit("incident_created", incident_id=incident_id, call_id=report.call_id, callsign=report.callsign,

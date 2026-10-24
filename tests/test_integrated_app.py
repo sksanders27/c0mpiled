@@ -196,3 +196,52 @@ def test_integrated_vapi_webhook_retains_separate_secret_auth(tmp_path):
         accepted = client.post("/vapi/webhook", json=body, headers={"X-Vapi-Secret": "vapi-secret"})
         assert accepted.status_code == 200
         assert accepted.json()["results"][0]["result"] == "Copy, coordinating now."
+
+
+def _report(call_id, tool_call_id):
+    body = fixture("pilot_report_emergency.json")
+    body["message"]["call"]["id"] = call_id
+    body["message"]["call"]["monitor"]["controlUrl"] = f"https://ctl.invalid/{call_id}"
+    body["message"]["toolCallList"][0]["id"] = tool_call_id
+    return body
+
+
+def test_duplicate_callsign_tells_pilot_and_dev_reset_clears_it(tmp_path):
+    """Rehearsal re-run: same callsign on a new call is a 409; the pilot must hear it, and reset fixes it."""
+    vapi = FakeVapi()
+    with TestClient(make_app(tmp_path, vapi=vapi)) as client:
+        client.post("/vapi/webhook", json=_report("call-a", "tc-a"))
+        wait_for(lambda: get_only_incident(client))
+        client.post("/vapi/webhook", json=_report("call-b", "tc-b"))
+        wait_for(lambda: any("could not open this incident" in text for _, text in vapi.said))
+        assert any(url.endswith("/call-b") for url, text in vapi.said if "could not open" in text)
+
+        reset = client.post("/dev/reset")
+        assert reset.status_code == 200
+        snapshot = client.get("/api/snapshot").json()
+        assert snapshot["incidents"] == []
+        assert [e["kind"] for e in snapshot["events"]] == ["system.reset"]
+        assert all(u["status"] == "AVAILABLE" for u in snapshot["units"])
+        assert client.app.state.voice.registry.pilot_calls == {}
+
+        client.post("/vapi/webhook", json=_report("call-c", "tc-c"))
+        incident = wait_for(lambda: get_only_incident(client))
+        assert incident["report"]["call_id"] == "call-c"
+
+
+def test_dev_reset_requires_token_when_configured(tmp_path):
+    with TestClient(make_app(tmp_path, api_token="dashboard-secret")) as client:
+        assert client.post("/dev/reset").status_code == 401
+        ok = client.post("/dev/reset", headers={"Authorization": "Bearer dashboard-secret"})
+        assert ok.status_code == 200
+
+
+def test_startup_banner_masks_phones_and_warns_on_offline_with_key(tmp_path, caplog):
+    caplog.set_level("INFO", logger="skywatch")
+    with TestClient(make_app(tmp_path)):
+        pass
+    text = caplog.text
+    assert "OFFLINE_VOICE=1 SIM_UNITS=1 AIRCRAFT_MODE=mock" in text
+    assert "ambulance-1=***4321" in text and "fire-1=***4567" in text
+    assert "+15551234567" not in text
+    assert "a REAL pilot call will hear NO dispatch updates" in text

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import hmac
+import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -24,6 +25,31 @@ from voice.models import EmergencyReport
 from voice.ports import VoiceService
 from voice.router import build_router
 from voice.vapi_client import VapiClient
+
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("skywatch")
+
+
+def mask_phone(phone: str) -> str:
+    return f"***{phone[-4:]}" if phone and len(phone) > 4 else "***"
+
+
+def startup_banner(settings: Settings, config: BackendSettings, voice: VoiceService, dispatch: DispatchEngine) -> None:
+    """Make the active mode impossible to miss in the terminal before a live call."""
+    log.info("=" * 72)
+    log.info("SkyWatch up: OFFLINE_VOICE=%s SIM_UNITS=%s AIRCRAFT_MODE=%s SCRIPTED_DECLINE_FIRST=%s",
+             int(config.offline_voice), int(settings.sim_units), config.aircraft_mode,
+             int(settings.scripted_decline_first))
+    log.info("webhook=%s unit_assistant=%s", settings.webhook_url,
+             voice.unit_assistant_id or "(none: run scripts/setup_vapi.py)")
+    log.info("unit -> phone: %s", ", ".join(f"{uid}={mask_phone(p)}" for uid, p in dispatch.unit_phones.items()))
+    if config.offline_voice and settings.vapi_api_key:
+        log.warning("!" * 72)
+        log.warning("!!! OFFLINE_VOICE=1 but VAPI_API_KEY is set: a REAL pilot call will hear NO dispatch updates.")
+        log.warning("!!! For a live call set OFFLINE_VOICE=0 in .env and restart.")
+        log.warning("!" * 72)
+    log.info("=" * 72)
 
 
 class Confirmation(BaseModel):
@@ -54,6 +80,7 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
             application.state.engine, application.state.vapi = dispatch, vapi
             voice_router = build_router(voice)
             application.state.voice_webhook = next(route.endpoint for route in voice_router.routes if route.path == "/vapi/webhook")
+            startup_banner(settings, config, voice, dispatch)
             try:
                 yield
             finally:
@@ -134,6 +161,16 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
     @app.post("/api/incidents/{incident_id}/resolve", response_model=Incident, dependencies=protected, tags=["incidents"])
     async def resolve(incident_id: str, request: Request):
         return await request.app.state.dispatch.end(incident_id, resolved=True)
+
+    @app.post("/dev/reset", dependencies=protected, tags=["system"])
+    async def dev_reset(request: Request):
+        """Clear incidents, units, events and voice call state between rehearsals (no restart needed)."""
+        voice, dispatch = request.app.state.voice, request.app.state.dispatch
+        await voice.aclose()  # cancel sim units, timeouts and pending voice work; the service stays usable
+        voice.registry.reset()
+        await dispatch.reset()
+        log.info("rehearsal state reset via POST /dev/reset")
+        return {"ok": True, "incidents": 0, "sequence": dispatch.sequence}
 
     @app.get("/api/units", dependencies=protected, tags=["dashboard"])
     async def units(request: Request):
