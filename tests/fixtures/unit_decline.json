@@ -1,0 +1,9 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "toolCallList": [
+      {"id": "call_decline_001", "type": "function", "function": {"name": "decline_assignment", "arguments": "{\"reason\": \"committed to another call\"}"}}
+    ],
+    "call": {"id": "UNIT_CALL_ID", "type": "outboundPhoneCall", "assistantId": "unit-assistant-fake"}
+  }
+}

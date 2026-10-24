@@ -1,0 +1,9 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "toolCallList": [
+      {"id": "call_accept_001", "type": "function", "function": {"name": "accept_assignment", "arguments": {}}}
+    ],
+    "call": {"id": "UNIT_CALL_ID", "type": "outboundPhoneCall", "assistantId": "unit-assistant-fake"}
+  }
+}

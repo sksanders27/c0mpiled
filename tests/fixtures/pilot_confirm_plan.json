@@ -1,0 +1,29 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "timestamp": 1761339030000,
+    "toolWithToolCallList": [
+      {
+        "type": "function",
+        "function": {"name": "confirm_plan"},
+        "toolCall": {
+          "id": "call_confirm_001",
+          "type": "function",
+          "function": {"name": "confirm_plan", "arguments": "{\"readback\": \"Wilco, landing San Diego, United twelve thirty-four\"}"}
+        }
+      }
+    ],
+    "toolCallList": [
+      {
+        "id": "call_confirm_001",
+        "type": "function",
+        "function": {"name": "confirm_plan", "arguments": "{\"readback\": \"Wilco, landing San Diego, United twelve thirty-four\"}"}
+      }
+    ],
+    "call": {
+      "id": "fake-pilot-call-1",
+      "assistantId": "pilot-assistant-fake",
+      "monitor": {"controlUrl": "http://127.0.0.1:8000/dev/control/fake-pilot-call-1"}
+    }
+  }
+}

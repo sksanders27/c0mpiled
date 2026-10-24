@@ -1,0 +1,13 @@
+{
+  "message": {
+    "type": "transcript[transcriptType=\"final\"]",
+    "role": "user",
+    "transcriptType": "final",
+    "transcript": "Mayday mayday mayday, United twelve thirty-four, engine fire, one hundred forty souls on board.",
+    "call": {
+      "id": "fake-pilot-call-1",
+      "assistantId": "pilot-assistant-fake",
+      "monitor": {"controlUrl": "http://127.0.0.1:8000/dev/control/fake-pilot-call-1"}
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "message": {
+    "type": "status-update",
+    "status": "in-progress",
+    "timestamp": 1761339000000,
+    "call": {
+      "id": "fake-pilot-call-1",
+      "orgId": "org-fake",
+      "type": "inboundPhoneCall",
+      "assistantId": "pilot-assistant-fake",
+      "monitor": {
+        "listenUrl": "wss://example.invalid/fake-pilot-call-1/transport",
+        "controlUrl": "http://127.0.0.1:8000/dev/control/fake-pilot-call-1"
+      }
+    }
+  }
+}

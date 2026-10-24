@@ -1,0 +1,8 @@
+{
+  "message": {
+    "type": "status-update",
+    "status": "ended",
+    "endedReason": "customer-did-not-answer",
+    "call": {"id": "UNIT_CALL_ID", "type": "outboundPhoneCall", "assistantId": "unit-assistant-fake"}
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "timestamp": 1761339005000,
+    "toolCallList": [
+      {
+        "id": "call_report_001",
+        "type": "function",
+        "function": {
+          "name": "report_emergency",
+          "arguments": {
+            "callsign_raw": "United twelve thirty-four",
+            "callsign": "UAL1234",
+            "emergency_type": "FIRE_SMOKE",
+            "severity": "MAYDAY",
+            "souls_on_board": 140,
+            "summary": "United 1234 reports an engine fire with 140 souls on board."
+          }
+        }
+      }
+    ],
+    "call": {
+      "id": "fake-pilot-call-1",
+      "orgId": "org-fake",
+      "type": "inboundPhoneCall",
+      "assistantId": "pilot-assistant-fake",
+      "monitor": {"controlUrl": "http://127.0.0.1:8000/dev/control/fake-pilot-call-1"}
+    }
+  }
+}

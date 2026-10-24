@@ -1,0 +1,7 @@
+.env
+env
+.vapi_ids.json
+logs/
+.venv/
+__pycache__/
+.pytest_cache/
