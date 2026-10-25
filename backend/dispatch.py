@@ -103,7 +103,7 @@ class DispatchEngine:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def reset(self):
+    async def reset(self, message="Rehearsal reset: incidents, units and events cleared."):
         """Rehearsal helper behind POST /dev/reset: drop incidents, reservations and events."""
         current = asyncio.current_task()
         tasks = [task for task in self.tasks if task is not current]
@@ -117,7 +117,7 @@ class DispatchEngine:
             self.events.clear()
             self.watchdogs.clear()
             self.briefed.clear()
-            self._emit(None, "system.reset", "Rehearsal reset: incidents, units and events cleared.")
+            self._emit(None, "system.reset", message)
 
     def _get(self, incident_id):
         if incident_id not in self.incidents:

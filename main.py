@@ -46,6 +46,8 @@ def startup_banner(settings: Settings, config: BackendSettings, voice: VoiceServ
     if not settings.sim_units and settings.unit_transport == "web":
         log.info("unit browsers: %s", ", ".join(f"{settings.public_base_url}/unit?u={n}"
                                                for n in range(1, len(settings.unit_phones) + 1)))
+    log.info("auto-reset after pilot hangup: %s", f"{settings.auto_reset_after_hangup_s:g}s"
+             if settings.auto_reset_after_hangup_s is not None else "off")
     log.info("webhook=%s unit_assistant=%s", settings.webhook_url,
              voice.unit_assistant_id or "(none: run scripts/setup_vapi.py)")
     log.info("unit -> phone: %s", ", ".join(f"{uid}={mask_phone(p)}" for uid, p in dispatch.unit_phones.items()))
@@ -55,6 +57,33 @@ def startup_banner(settings: Settings, config: BackendSettings, voice: VoiceServ
         log.warning("!!! For a live call set OFFLINE_VOICE=0 in .env and restart.")
         log.warning("!" * 72)
     log.info("=" * 72)
+
+
+async def reset_state(voice: VoiceService, dispatch: DispatchEngine, message: str | None = None) -> None:
+    """Clear incidents, units, events and voice call state (POST /dev/reset and auto-reset)."""
+    await voice.aclose()  # cancel sim units, timeouts and pending voice work; the service stays usable
+    voice.registry.reset()
+    await (dispatch.reset(message) if message else dispatch.reset())
+
+
+def install_auto_reset(voice: VoiceService, dispatch: DispatchEngine, delay_s: float | None) -> None:
+    """Reset rehearsal state delay_s after a pilot hangs up, unless another pilot call is live by then.
+
+    The delay keeps the finished incident on the observer for a moment.
+    """
+    if delay_s is None:
+        return
+
+    async def later(call_id: str) -> None:
+        await asyncio.sleep(delay_s)
+        live = [pc.call_id for pc in voice.registry.pilot_calls.values() if not pc.ended]
+        if live:
+            log.info("auto-reset skipped: pilot call %s is live", live[0])
+            return
+        await reset_state(voice, dispatch, f"Automatic reset {delay_s:g}s after the pilot call ended.")
+        log.info("auto-reset: state cleared %gs after pilot call %s ended", delay_s, call_id)
+
+    voice.pilot_ended_hooks.append(lambda call_id: voice.spawn(later(call_id), name=f"auto-reset:{call_id}"))
 
 
 class UnitBind(BaseModel):
@@ -91,6 +120,7 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
             application.state.engine, application.state.vapi = dispatch, vapi
             voice_router = build_router(voice)
             application.state.voice_webhook = next(route.endpoint for route in voice_router.routes if route.path == "/vapi/webhook")
+            install_auto_reset(voice, dispatch, settings.auto_reset_after_hangup_s)
             startup_banner(settings, config, voice, dispatch)
             try:
                 yield
@@ -208,9 +238,7 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
     async def dev_reset(request: Request):
         """Clear incidents, units, events and voice call state between rehearsals (no restart needed)."""
         voice, dispatch = request.app.state.voice, request.app.state.dispatch
-        await voice.aclose()  # cancel sim units, timeouts and pending voice work; the service stays usable
-        voice.registry.reset()
-        await dispatch.reset()
+        await reset_state(voice, dispatch)
         log.info("rehearsal state reset via POST /dev/reset")
         return {"ok": True, "incidents": 0, "sequence": dispatch.sequence}
 

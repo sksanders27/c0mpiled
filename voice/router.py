@@ -82,8 +82,10 @@ def build_router(service: VoiceService) -> APIRouter:
                 # Hung up / no answer / voicemail without a decision counts as a decline.
                 log.info("unit call %s ended (%s) without a decision", call_id, ended_reason)
                 service.unit_decision(call_id, False, "no_answer")
-        elif call_id in reg.pilot_calls:
+        elif call_id in reg.pilot_calls and not reg.pilot_calls[call_id].ended:
+            # status-update(ended) and end-of-call-report both land here; act on the first only.
             reg.pilot_calls[call_id].ended = True
+            service.pilot_call_ended(call_id)
 
     @router.post("/vapi/webhook")
     async def vapi_webhook(request: Request):

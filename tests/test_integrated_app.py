@@ -280,3 +280,54 @@ def test_pilot_page_and_config_expose_only_public_key(tmp_path, monkeypatch):
         cfg = client.get("/pilot/config").json()
         assert cfg == {"publicKey": "PUBLIC_KEY_TEST", "assistantId": "pilot-asst-1"}
         assert "PRIVATE_VAPI_KEY_TEST_SENTINEL" not in json.dumps(cfg)
+
+
+def _auto_reset_app(tmp_path, delay):
+    settings = Settings(log_dir=tmp_path, sim_units=True, sim_unit_delay_s=0.01, pilot_say_gap_s=0,
+                        auto_reset_after_hangup_s=delay, unit_phones=["+15551234567", "+15557654321"])
+    return create_app(settings=settings, backend_settings=BackendSettings(aircraft_mode="mock", offline_voice=True),
+                      vapi_client=FakeVapi())
+
+
+def _pilot_status(call_id, status):
+    return {"message": {"type": "status-update", "status": status, "endedReason": "customer-ended-call",
+                        "call": {"id": call_id, "type": "inboundPhoneCall",
+                                 "monitor": {"controlUrl": f"https://ctl.invalid/{call_id}"}}}}
+
+
+def test_pilot_hangup_auto_resets_after_delay(tmp_path):
+    with TestClient(_auto_reset_app(tmp_path, 0.2)) as client:
+        client.post("/vapi/webhook", json=_report("call-a", "tc-a"))
+        wait_for(lambda: get_only_incident(client))
+        client.post("/vapi/webhook", json=_pilot_status("call-a", "ended"))
+        client.post("/vapi/webhook", json=_pilot_status("call-a", "ended"))  # duplicate end: one timer only
+        assert get_only_incident(client) is not None  # still visible right after hangup
+        wait_for(lambda: client.get("/api/snapshot").json()["incidents"] == [])
+        events = client.get("/api/snapshot").json()["events"]
+        assert [e["kind"] for e in events] == ["system.reset"] and "Automatic reset" in events[0]["message"]
+        # same callsign works again on the next call, with no manual reset
+        client.post("/vapi/webhook", json=_report("call-b", "tc-b"))
+        assert wait_for(lambda: get_only_incident(client))["report"]["call_id"] == "call-b"
+
+
+def test_auto_reset_skipped_while_another_pilot_call_is_live(tmp_path):
+    with TestClient(_auto_reset_app(tmp_path, 0.2)) as client:
+        client.post("/vapi/webhook", json=_report("call-a", "tc-a"))
+        wait_for(lambda: get_only_incident(client))
+        client.post("/vapi/webhook", json=_pilot_status("call-a", "ended"))
+        client.post("/vapi/webhook", json=_pilot_status("call-b", "in-progress"))  # redial before the timer fires
+        time.sleep(0.5)
+        assert get_only_incident(client) is not None
+
+
+def test_auto_reset_off(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTO_RESET_AFTER_HANGUP_S", "off")
+    assert Settings.from_env().auto_reset_after_hangup_s is None
+    monkeypatch.setenv("AUTO_RESET_AFTER_HANGUP_S", "30")
+    assert Settings.from_env().auto_reset_after_hangup_s == 30
+    with TestClient(_auto_reset_app(tmp_path, None)) as client:
+        client.post("/vapi/webhook", json=_report("call-a", "tc-a"))
+        wait_for(lambda: get_only_incident(client))
+        client.post("/vapi/webhook", json=_pilot_status("call-a", "ended"))
+        time.sleep(0.3)
+        assert get_only_incident(client) is not None

@@ -30,6 +30,20 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _opt_seconds(name: str, default: float | None) -> float | None:
+    """Seconds, or None when set to off/none/disabled or a negative number."""
+    v = (os.getenv(name) or "").strip().lower()
+    if not v:
+        return default
+    if v in ("off", "none", "disabled", "false", "no"):
+        return None
+    try:
+        f = float(v)
+    except ValueError:
+        return default
+    return f if f >= 0 else None
+
+
 def _float(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, "") or default)
@@ -57,6 +71,7 @@ class Settings:
     mock_dispatch_delay_s: float = 2.0
     pilot_say_gap_s: float = 1.5  # silence between consecutive dispatch messages to the pilot
     unit_transport: str = "phone"  # "phone": Vapi outbound call; "web": browser at /unit?u=N picks it up
+    auto_reset_after_hangup_s: float | None = 15.0  # main:app resets rehearsal state this long after the pilot hangs up
     log_dir: Path = ROOT / "logs"
 
     @classmethod
@@ -81,6 +96,7 @@ class Settings:
             mock_dispatch_delay_s=_float("MOCK_DISPATCH_DELAY_S", 2.0),
             pilot_say_gap_s=_float("PILOT_SAY_GAP_S", 1.5),
             unit_transport=(os.getenv("UNIT_TRANSPORT", "phone").strip().lower() or "phone"),
+            auto_reset_after_hangup_s=_opt_seconds("AUTO_RESET_AFTER_HANGUP_S", 15.0),
         )
 
     def __post_init__(self):

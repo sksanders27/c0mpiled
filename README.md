@@ -95,7 +95,9 @@ Keep the page in the foreground with the screen on.
 
 ### Between rehearsals
 
-`POST /dev/reset` clears incidents, reservations, events and voice call state without a restart. It uses the same bearer auth as `/api/*`, so it's open when `API_TOKEN` is blank. Without a reset, re-using a callsign that still has an active incident returns 409, and the pilot hears "Dispatch could not open this incident…".
+**Automatic:** `main:app` runs the same reset `AUTO_RESET_AFTER_HANGUP_S` seconds (default 15) after a pilot call ends. The delay keeps the finished incident on the observer briefly. The reset is skipped if another pilot call is already live. Set the variable to `off` to disable it.
+
+**Manual:** `POST /dev/reset` clears incidents, reservations, events and voice call state without a restart. It uses the same bearer auth as `/api/*`, so it's open when `API_TOKEN` is blank. Without a reset, re-using a callsign that still has an active incident returns 409, and the pilot hears "Dispatch could not open this incident…".
 
 ```bash
 curl -X POST http://127.0.0.1:8000/dev/reset

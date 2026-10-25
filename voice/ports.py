@@ -65,6 +65,7 @@ class VoiceService:
         # Per pilot call: serialize `say` so back-to-back updates don't run together.
         self._say_locks: dict[str, asyncio.Lock] = {}
         self._say_free_at: dict[str, float] = {}  # loop time when the last message should have finished
+        self.pilot_ended_hooks: list = []  # callables(call_id), run once when a pilot call ends
         settings.log_dir.mkdir(parents=True, exist_ok=True)
 
     def bind_dispatch(self, dispatch: DispatchPort) -> None:
@@ -116,6 +117,15 @@ class VoiceService:
             await self.dispatch.on_event(event)
         except Exception as e:  # fire-and-forget; never let the map break a call
             log.warning("dispatch.on_event failed: %s", e)
+
+    def pilot_call_ended(self, call_id: str) -> None:
+        pc = self.registry.pilot_calls.get(call_id)
+        self.emit("pilot_call_ended", call_id=call_id, incident_id=pc.incident_id if pc else None)
+        for hook in list(self.pilot_ended_hooks):
+            try:
+                hook(call_id)
+            except Exception:
+                log.exception("pilot_ended hook failed")
 
     def is_unit_call(self, call: dict) -> bool:
         cid = call.get("id")
