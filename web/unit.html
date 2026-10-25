@@ -23,7 +23,9 @@
     <button id="duty">Go on duty</button>
   </main>
   <script type="module">
-    import Vapi from 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm';
+    import VapiModule from 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm';
+    // jsdelivr's ESM build of this CommonJS package default-exports `exports`; the class is on .default.
+    const Vapi = VapiModule.default || VapiModule;
 
     const slot = Math.max(1, parseInt(new URLSearchParams(location.search).get('u') || '1', 10) || 1);
     document.title = `SkyWatch Unit ${slot}`;
