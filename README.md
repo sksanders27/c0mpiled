@@ -1,8 +1,53 @@
 # SkyWatch emergency dispatch
 
-The integrated FastAPI app connects the team's existing Vapi voice service to aircraft lookup, nearby airports, simulated responder selection, automatic reassignment, and observer APIs.
+**c0mpiled-16 @ UCSD — "Invisible Interfaces" (Dispatch · No App · Unsupervised)**
+
+A pilot declares an emergency **by voice**, and SkyWatch dispatches a response without anyone touching a screen:
+
+1. The pilot calls the SkyWatch line and says the emergency, e.g. *"Mayday mayday, Southwest four niner four seven, passenger in cardiac arrest…"*.
+2. SkyWatch turns the spoken callsign into the real flight ID, finds the flight on live ADS-B (adsb.lol), and picks the nearest airport and dispatcher.
+3. It contacts a capable response unit **by voice call**. If that unit declines or doesn't answer, it reassigns the job automatically.
+4. When a unit accepts, the pilot hears the plan **in the same call** and says "wilco", which closes the incident.
+
+The map at `/observer` is only for watching. The pilot and units never need it.
+
+## For judges
+
+**Fastest way to see it: no accounts, no keys, about 2 minutes.** It runs the whole loop offline, with simulated voice and responders:
+
+```bash
+git clone https://github.com/sksanders27/c0mpiled && cd c0mpiled
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+OFFLINE_VOICE=1 SIM_UNITS=1 MOCK_DISPATCH=0 AIRCRAFT_MODE=mock .venv/bin/uvicorn main:app --workers 1 --port 8000
+```
+
+Then:
+1. Open **http://127.0.0.1:8000/observer** in a browser.
+2. In a second terminal, run `.venv/bin/python scripts/demo_backend.py`.
+
+You'll watch an incident get reported, located, assigned, declined, reassigned, accepted and confirmed. Run the tests with `.venv/bin/python -m pytest -q`.
+
+**Live version (while the team's laptop is running):**
+- **Observer map:** https://pastor-earmark-handshake.ngrok-free.dev/observer. ngrok may show a "You are about to visit" page first; click **Visit Site**.
+- **Pilot line in a browser:** https://pastor-earmark-handshake.ngrok-free.dev/pilot. Press MAYDAY and speak. Ask the team for the phone number if you'd rather call.
+- **Unit "phones":** https://pastor-earmark-handshake.ngrok-free.dev/unit?u=1 and `?u=2`. Tap *Go on duty*, and the page rings when a unit in that slot is dispatched.
+
+**Where to look in the code:**
+- `voice/`: Vapi assistants, webhook, live call control, and spoken callsign → ICAO.
+- `backend/dispatch.py`: dispatcher and unit selection, reassignment, and attempt budgets.
+- `web/`: the observer, pilot and unit pages.
+
+**Unsupervised safeguards:**
+- **Timeouts:** a unit that doesn't answer within 45 s counts as a decline.
+- **Attempt limits:** per-capability and total attempt budgets, plus an outbound-call cap. When they run out, the incident escalates to a human.
+- **Dial allow-list:** only numbers listed in `.env` are ever contacted.
+- **Duplicates:** duplicate reports and stale callbacks are ignored.
+- **Verified confirmation:** a "wilco" only counts after the plan was actually delivered to the pilot.
+- **Failures are spoken:** if dispatch fails, the pilot is told so, never left in silence.
 
 **Every emergency and responder is simulated.** An airport selected by distance is a demonstration coordination point. It is not a landing recommendation or ATC clearance. Pilots continue following their existing ATC instructions.
+
+---
 
 ## Run an offline demonstration
 
