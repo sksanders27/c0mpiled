@@ -53,7 +53,7 @@ def main() -> None:
         alt = a.get("alt_baro")
         if cs[:3] not in ICAO_TO_TELEPHONY or normalize_callsign(cs) != cs or not isinstance(alt, (int, float)):
             continue
-        if not (1500 <= alt <= 15000) or a.get("lat") is None:
+        if not (3000 <= alt <= 15000) or a.get("lat") is None:  # below ~3000 ft it may land mid-call
             continue
         dist = km(SAN, (a["lat"], a["lon"]))
         descending = (a.get("baro_rate") or 0) < -300
