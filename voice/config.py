@@ -56,6 +56,7 @@ class Settings:
     sim_unit_delay_s: float = 4.0
     mock_dispatch_delay_s: float = 2.0
     pilot_say_gap_s: float = 1.5  # silence between consecutive dispatch messages to the pilot
+    unit_transport: str = "phone"  # "phone": Vapi outbound call; "web": browser at /unit?u=N picks it up
     log_dir: Path = ROOT / "logs"
 
     @classmethod
@@ -79,7 +80,12 @@ class Settings:
             sim_unit_delay_s=_float("SIM_UNIT_DELAY_S", 4.0),
             mock_dispatch_delay_s=_float("MOCK_DISPATCH_DELAY_S", 2.0),
             pilot_say_gap_s=_float("PILOT_SAY_GAP_S", 1.5),
+            unit_transport=(os.getenv("UNIT_TRANSPORT", "phone").strip().lower() or "phone"),
         )
+
+    def __post_init__(self):
+        if self.unit_transport not in ("phone", "web"):
+            raise ValueError("UNIT_TRANSPORT must be phone or web")
 
     @property
     def webhook_url(self) -> str:

@@ -40,7 +40,11 @@ _Hackathon: c0mpiled-16 @ UCSD ("Invisible Interfaces": Dispatch, No App, Unsupe
     - per-call lock;
     - each message waits for the previous one's estimated speech time (0.35 s/word) plus `PILOT_SAY_GAP_S` (default 1.5 s).
     - Needs a `main:app` restart to take effect.
-  - [ ] #5 Real outbound unit calls: blocked until a Twilio number is imported into Vapi.
+  - [ ] #5 Real outbound unit calls: blocked. Vapi rejects them: "Numbers Bought On Vapi Have A Daily Outbound Call Limit".
+  - [x] #5b `UNIT_TRANSPORT=web` as a replacement:
+    - Units are reached by Vapi web calls from `/unit?u=N` on teammates' phones.
+    - The same tools, scripted decline, 45 s timeout and no-answer handling apply.
+    - 9 new tests.
 
 **Time plan:**
 - Integration merged and green by **4:45 PM**

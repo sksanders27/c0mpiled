@@ -40,9 +40,12 @@ def mask_phone(phone: str) -> str:
 def startup_banner(settings: Settings, config: BackendSettings, voice: VoiceService, dispatch: DispatchEngine) -> None:
     """Make the active mode impossible to miss in the terminal before a live call."""
     log.info("=" * 72)
-    log.info("SkyWatch up: OFFLINE_VOICE=%s SIM_UNITS=%s AIRCRAFT_MODE=%s SCRIPTED_DECLINE_FIRST=%s",
-             int(config.offline_voice), int(settings.sim_units), config.aircraft_mode,
+    log.info("SkyWatch up: OFFLINE_VOICE=%s SIM_UNITS=%s UNIT_TRANSPORT=%s AIRCRAFT_MODE=%s SCRIPTED_DECLINE_FIRST=%s",
+             int(config.offline_voice), int(settings.sim_units), settings.unit_transport, config.aircraft_mode,
              int(settings.scripted_decline_first))
+    if not settings.sim_units and settings.unit_transport == "web":
+        log.info("unit browsers: %s", ", ".join(f"{settings.public_base_url}/unit?u={n}"
+                                               for n in range(1, len(settings.unit_phones) + 1)))
     log.info("webhook=%s unit_assistant=%s", settings.webhook_url,
              voice.unit_assistant_id or "(none: run scripts/setup_vapi.py)")
     log.info("unit -> phone: %s", ", ".join(f"{uid}={mask_phone(p)}" for uid, p in dispatch.unit_phones.items()))
@@ -52,6 +55,11 @@ def startup_banner(settings: Settings, config: BackendSettings, voice: VoiceServ
         log.warning("!!! For a live call set OFFLINE_VOICE=0 in .env and restart.")
         log.warning("!" * 72)
     log.info("=" * 72)
+
+
+class UnitBind(BaseModel):
+    dispatch_id: str = Field(min_length=1, max_length=64)
+    call_id: str = Field(min_length=1, max_length=128)
 
 
 class Confirmation(BaseModel):
@@ -139,6 +147,24 @@ def create_app(settings: Settings | None = None, backend_settings: BackendSettin
     async def pilot_page():
         """Browser fallback for the pilot phone line (web call to the same pilot assistant)."""
         return FileResponse(Path(__file__).parent / "web" / "pilot.html")
+
+    @app.get("/unit", include_in_schema=False)
+    async def unit_page():
+        """Unit 'phone' for UNIT_TRANSPORT=web: open /unit?u=1 (UNIT_PHONE_1's slot), /unit?u=2, ..."""
+        return FileResponse(Path(__file__).parent / "web" / "unit.html")
+
+    @app.get("/unit/pending", include_in_schema=False)
+    async def unit_pending(request: Request, u: int = Query(ge=1, le=9)):
+        voice = request.app.state.voice
+        return {"dispatch": voice.web_pending(u), "transport": settings.unit_transport, "sim_units": settings.sim_units}
+
+    @app.post("/unit/bind", include_in_schema=False)
+    async def unit_bind(bind: UnitBind, request: Request):
+        status = request.app.state.voice.web_bind(bind.dispatch_id, bind.call_id)
+        if status != "ok":
+            # The page hangs up when told the dispatch is no longer wanted (timed out / reassigned).
+            raise HTTPException(404 if status == "unknown" else 409, status)
+        return {"ok": True}
 
     @app.get("/pilot/config", include_in_schema=False)
     async def pilot_config():

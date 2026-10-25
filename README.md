@@ -61,6 +61,7 @@ Switching modes means editing `.env` and restarting. Every live mode runs `uvico
 
 | Variable | Offline rehearsal | **Live demo (sim units)** | Live demo (real unit calls) | Voice-only fallback (`dev_main:app`) |
 |---|---|---|---|---|
+| `UNIT_TRANSPORT` | phone | phone | **web** (browser units) or phone (needs Twilio number) | phone |
 | `MOCK_DISPATCH` | 0 | **0** | 0 | 1 |
 | `OFFLINE_VOICE` | 1 | **0** ← must be explicit | 0 | n/a |
 | `SIM_UNITS` | 1 | **1** | 0 | 1 |
@@ -82,6 +83,15 @@ Switching modes means editing `.env` and restarting. Every live mode runs `uvico
 | `UNIT_PHONE_2` | ambulance-1, fire-2, police-2, ambulance-3 |
 
 For a MEDICAL emergency near San Diego, expect ambulance-1 (phone 2) first, then ambulance-2 (phone 1).
+
+### Units as browser web calls (`UNIT_TRANSPORT=web`)
+
+Our Vapi number can't dial out, so units can instead be reached through a browser. With `SIM_UNITS=0` and `UNIT_TRANSPORT=web`:
+1. Each teammate opens `https://<public url>/unit?u=N` on their phone and taps **Go on duty**. Slot `N` is `UNIT_PHONE_N`'s slot in the table above.
+2. When dispatch picks a unit in that slot, the page rings and starts a Vapi web call to the unit assistant.
+3. The page binds that call to the dispatch. Accept/decline, `SCRIPTED_DECLINE_FIRST`, the 45 s timeout and hang-up = no-answer all behave as they do for phone calls.
+
+Keep the page in the foreground with the screen on.
 
 ### Between rehearsals
 

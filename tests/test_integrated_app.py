@@ -242,7 +242,7 @@ def test_startup_banner_masks_phones_and_warns_on_offline_with_key(tmp_path, cap
     with TestClient(make_app(tmp_path)):
         pass
     text = caplog.text
-    assert "OFFLINE_VOICE=1 SIM_UNITS=1 AIRCRAFT_MODE=mock" in text
+    assert "OFFLINE_VOICE=1 SIM_UNITS=1 UNIT_TRANSPORT=phone AIRCRAFT_MODE=mock" in text
     assert "ambulance-1=***4321" in text and "fire-1=***4567" in text
     assert "+15551234567" not in text
     assert "a REAL pilot call will hear NO dispatch updates" in text

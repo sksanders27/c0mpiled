@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyWatch Unit</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.3 system-ui, sans-serif; background: #0b1220; color: #e8eef8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: #0b1220; transition: background .3s; }
+    body.incoming { background: #5a1d24; }
+    body.oncall { background: #123d2a; }
+    main { width: 100%; max-width: 560px; text-align: center; }
+    #status { font-size: clamp(40px, 12vw, 72px); font-weight: 800; letter-spacing: .02em; }
+    button { margin-top: 32px; padding: 22px 34px; font: 700 24px system-ui, sans-serif; color: #fff; background: #2f7d55;
+             border: 0; border-radius: 16px; cursor: pointer; }
+    button[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <div id="status" role="status" aria-live="assertive">Off duty</div>
+    <button id="duty">Go on duty</button>
+  </main>
+  <script type="module">
+    import Vapi from 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm';
+
+    const slot = Math.max(1, parseInt(new URLSearchParams(location.search).get('u') || '1', 10) || 1);
+    document.title = `SkyWatch Unit ${slot}`;
+    const statusEl = document.getElementById('status');
+    const dutyBtn = document.getElementById('duty');
+    let state = 'off', vapi = null, audio = null, wakeLock = null;
+
+    function show(text, mood = '') { statusEl.textContent = text; document.body.className = mood; }
+
+    function ring(seconds = 2.4) {
+      // US-style ring: 440 + 480 Hz, 0.8s on / 0.4s off.
+      const t0 = audio.currentTime, gain = audio.createGain();
+      gain.connect(audio.destination); gain.gain.value = 0;
+      for (const f of [440, 480]) {
+        const o = audio.createOscillator(); o.frequency.value = f; o.connect(gain); o.start(t0); o.stop(t0 + seconds);
+      }
+      for (let t = 0; t < seconds; t += 1.2) {
+        gain.gain.setValueAtTime(0.25, t0 + t); gain.gain.setValueAtTime(0, t0 + Math.min(t + 0.8, seconds));
+      }
+      return new Promise(r => setTimeout(r, seconds * 1000));
+    }
+
+    async function keepAwake() {
+      try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+    }
+    document.addEventListener('visibilitychange', () => { if (state !== 'off' && document.visibilityState === 'visible') keepAwake(); });
+
+    function backOnDuty(delay = 3000) {
+      setTimeout(() => { if (state === 'done') { state = 'duty'; show('On duty'); } }, delay);
+    }
+
+    async function answer(d) {
+      state = 'incoming'; show('Incoming dispatch', 'incoming');
+      await ring();
+      let call = null;
+      try { call = await vapi.start(d.assistantId, { variableValues: d.variableValues }); }
+      catch (e) { console.error(e); }
+      if (!call || !call.id) { state = 'done'; show('Done'); backOnDuty(); return; }
+      const r = await fetch('/unit/bind', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ dispatch_id: d.dispatch_id, call_id: call.id }) });
+      if (!r.ok) { vapi.stop(); state = 'done'; show('Done'); backOnDuty(); }  // dispatch expired or reassigned
+    }
+
+    async function poll() {
+      if (state === 'duty') {
+        try {
+          const r = await fetch(`/unit/pending?u=${slot}`, { cache: 'no-store' });
+          const body = r.ok ? await r.json() : {};
+          if (body.dispatch && state === 'duty') answer(body.dispatch);
+        } catch (_) { /* transient network error: keep polling */ }
+      }
+      setTimeout(poll, 1000);
+    }
+
+    dutyBtn.addEventListener('click', async () => {
+      dutyBtn.disabled = true;
+      try {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        await audio.resume();
+        const mic = await navigator.mediaDevices.getUserMedia({ audio: true });  // ask for the mic up front
+        mic.getTracks().forEach(t => t.stop());
+        const cfg = await fetch('/pilot/config', { cache: 'no-store' });
+        if (!cfg.ok) throw new Error('Vapi public key not configured');
+        vapi = new Vapi((await cfg.json()).publicKey);
+        vapi.on('call-start', () => { state = 'oncall'; show('On call', 'oncall'); });
+        vapi.on('call-end', () => { state = 'done'; show('Done'); backOnDuty(); });
+        vapi.on('error', e => console.error('vapi error', e));
+        await keepAwake();
+        dutyBtn.hidden = true; state = 'duty'; show('On duty');
+        poll();
+      } catch (e) {
+        dutyBtn.disabled = false; show(`Error: ${e.message || e}`);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -35,12 +35,26 @@ class UnitCall:
 
 
 @dataclass
+class WebDispatch:
+    """A unit call waiting for the browser at /unit?u=<slot> (UNIT_TRANSPORT=web)."""
+    dispatch_id: str
+    slot: int  # 1 = UNIT_PHONE_1's slot, 2 = UNIT_PHONE_2's, ...
+    variables: dict
+    created: float
+    call_id: str | None = None  # Vapi web-call id once the browser binds
+
+
+@dataclass
 class Registry:
     pilot_calls: dict[str, PilotCall] = field(default_factory=dict)
     incident_to_pilot: dict[str, str] = field(default_factory=dict)
     unit_calls: dict[str, UnitCall] = field(default_factory=dict)
     outbound_count: dict[str, int] = field(default_factory=dict)  # incident_id -> unit calls placed
     tool_results: dict[str, str] = field(default_factory=dict)  # toolCallId -> result (idempotency)
+    # Web transport: unit_calls holds each web UnitCall under its dispatch_id and, once bound, also
+    # under its Vapi call id (same object), so timeouts, tools and status updates all find it.
+    web_dispatches: dict[str, WebDispatch] = field(default_factory=dict)
+    early_unit_control: dict[str, str] = field(default_factory=dict)  # call_id -> controlUrl seen before bind
 
     def reset(self) -> None:
         """Clear all call state in place (POST /dev/reset between rehearsals)."""
@@ -52,6 +66,8 @@ class Registry:
         self.unit_calls.clear()
         self.outbound_count.clear()
         self.tool_results.clear()
+        self.web_dispatches.clear()
+        self.early_unit_control.clear()
 
     def pilot(self, call_id: str) -> PilotCall:
         if call_id not in self.pilot_calls:
@@ -83,7 +99,8 @@ class Registry:
         return {
             "pilot_calls": {k: {kk: vv for kk, vv in vars(v).items()} for k, v in self.pilot_calls.items()},
             "unit_calls": {
-                k: {kk: vv for kk, vv in vars(v).items() if kk != "timeout_task"} for k, v in self.unit_calls.items()
+                k: {kk: vv for kk, vv in vars(v).items() if kk != "timeout_task"}
+                for k, v in self.unit_calls.items() if k == v.call_id
             },
             "outbound_count": dict(self.outbound_count),
         }

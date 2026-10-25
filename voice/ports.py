@@ -17,7 +17,7 @@ from .assistants import UNIT_FIRST_MESSAGE
 from .callsign import is_valid_icao, spoken_callsign
 from .config import Settings, load_vapi_ids
 from .models import SPOKEN_EMERGENCY, EmergencyReport, Severity, UnitBrief, spoken_airport
-from .registry import Registry, UnitCall
+from .registry import Registry, UnitCall, WebDispatch
 from .vapi_client import VapiClient
 
 log = logging.getLogger("voice")
@@ -167,17 +167,22 @@ class VoiceService:
             return
 
         # Unsupervised guards: only dial allow-listed numbers, and only with a configured assistant.
+        web = self.settings.unit_transport == "web"
         blocked = None
         if brief.phone not in self.settings.unit_phones:
             blocked = "phone_not_allowlisted"
         elif not self.unit_assistant_id:
             blocked = "unit_assistant_missing"
-        elif not self.settings.vapi_phone_number_id:
+        elif not web and not self.settings.vapi_phone_number_id:
             blocked = "phone_number_id_missing"
         if blocked:
             log.error("NOT dialing unit %s: %s", brief.unit_id, blocked)
             self.emit("unit_call_blocked", reason=blocked, **base)
             self.spawn(self._report_unit(iid, brief.unit_id, False, blocked))
+            return
+
+        if web:
+            self._queue_web_unit(brief, attempt, variables, base)
             return
 
         try:
@@ -196,6 +201,50 @@ class VoiceService:
         self.registry.unit_calls[call_id] = uc
         self.emit("unit_call_started", call_id=call_id, simulated=False, **base)
         uc.timeout_task = self.spawn(self._unit_timeout(call_id), name=f"timeout:{call_id}")
+
+    # --- web transport (UNIT_TRANSPORT=web) ------------------------------------
+    def _queue_web_unit(self, brief: UnitBrief, attempt: int, variables: dict, base: dict) -> None:
+        """Instead of dialing, park the dispatch for the browser on duty in this phone's slot."""
+        slot = self.settings.unit_phones.index(brief.phone) + 1
+        dispatch_id = f"wd-{uuid.uuid4().hex[:12]}"
+        # dispatch_id rides along in variableValues so a webhook can bind even if /unit/bind is late.
+        variables = {**variables, "dispatch_id": dispatch_id}
+        uc = UnitCall(dispatch_id, brief.incident_id, brief.unit_id, brief.unit_name, attempt)
+        self.registry.unit_calls[dispatch_id] = uc
+        self.registry.web_dispatches[dispatch_id] = WebDispatch(
+            dispatch_id, slot, variables, asyncio.get_running_loop().time())
+        self.emit("unit_call_started", call_id=dispatch_id, simulated=False, transport="web", slot=slot, **base)
+        self.emit("transcript", leg="unit", call_id=dispatch_id, incident_id=brief.incident_id, role="assistant",
+                  text=self.render(UNIT_FIRST_MESSAGE, variables))
+        uc.timeout_task = self.spawn(self._unit_timeout(dispatch_id), name=f"timeout:{dispatch_id}")
+
+    def web_pending(self, slot: int) -> dict | None:
+        """Oldest undecided, unclaimed dispatch for this slot (polled by /unit?u=<slot>)."""
+        for wd in sorted(self.registry.web_dispatches.values(), key=lambda w: w.created):
+            uc = self.registry.unit_calls.get(wd.dispatch_id)
+            if wd.slot == slot and wd.call_id is None and uc is not None and not uc.decided:
+                return {"dispatch_id": wd.dispatch_id, "assistantId": self.unit_assistant_id,
+                        "unit_name": uc.unit_name, "variableValues": wd.variables}
+        return None
+
+    def web_bind(self, dispatch_id: str, call_id: str) -> str:
+        """Map the browser's Vapi web call to its dispatch. Returns ok | expired | unknown | conflict."""
+        wd = self.registry.web_dispatches.get(dispatch_id)
+        uc = self.registry.unit_calls.get(dispatch_id)
+        if wd is None or uc is None:
+            return "unknown"
+        if wd.call_id == call_id:
+            return "ok"
+        if wd.call_id is not None:
+            return "conflict"
+        if uc.decided:
+            return "expired"
+        wd.call_id = uc.call_id = call_id
+        self.registry.unit_calls[call_id] = uc
+        uc.control_url = uc.control_url or self.registry.early_unit_control.pop(call_id, None)
+        self.emit("unit_call_connected", incident_id=uc.incident_id, unit_id=uc.unit_id, unit_name=uc.unit_name,
+                  call_id=call_id, dispatch_id=dispatch_id, transport="web", slot=wd.slot)
+        return "ok"
 
     async def _unit_timeout(self, call_id: str) -> None:
         await asyncio.sleep(self.settings.unit_call_timeout_s)

@@ -103,9 +103,17 @@ def build_router(service: VoiceService) -> APIRouter:
         call_id = call.get("id")
         is_unit = service.is_unit_call(call)
 
+        if call_id and is_unit and call_id not in reg.unit_calls:
+            # Web-transport unit call that the browser hasn't bound yet: bind from the echoed variables.
+            dispatch_id = ((call.get("assistantOverrides") or {}).get("variableValues") or {}).get("dispatch_id")
+            if dispatch_id:
+                service.web_bind(dispatch_id, call_id)
+
         if call_id:
             control_url = (call.get("monitor") or {}).get("controlUrl")
-            if control_url:
+            if control_url and is_unit and call_id not in reg.unit_calls:
+                reg.early_unit_control[call_id] = control_url  # picked up by web_bind; never a pilot entry
+            elif control_url:
                 reg.note_control_url(call_id, control_url)
             elif not is_unit and call_id not in warned_no_control:
                 warned_no_control.add(call_id)
